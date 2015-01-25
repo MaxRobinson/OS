@@ -59,7 +59,7 @@ public class CPU
     /**
      * specifies whether the CPU should output details of its work
      **/
-    private boolean m_verbose = false;
+    private boolean m_verbose = true;
 
     /**
      * This array contains all the registers on the "chip".
@@ -267,7 +267,181 @@ public class CPU
     public void run()
     {
         //%%% WRITE THIS METHOD and any related helper methods.  %%%
-        
+    	this.m_registers[PC]+=this.getBASE();
+    	while(true)
+    	{
+    		
+    		int[] instr = this.m_RAM.fetch(this.m_registers[PC]);
+    		
+    		
+    		if(m_verbose == true)
+    		{
+    			regDump();
+    			printInstr(instr);
+    		}
+    		
+    		int physicalAddress;
+    		
+    		//Decode and execute
+    		switch(instr[0])
+            {
+                case SET:
+                    //System.out.println("SET R" + instr[1] + " = " + instr[2]);
+                	this.m_registers[instr[1]] = instr[2];
+                	incrementPC();
+                    break;
+                case ADD:
+                    //System.out.println("ADD R" + instr[1] + " = R" + instr[2] + " + R" + instr[3]);
+                	this.m_registers[instr[1]] = this.m_registers[instr[2]] +this.m_registers[instr[3]];
+                	incrementPC();
+                    break;
+                case SUB:
+                    //System.out.println("SUB R" + instr[1] + " = R" + instr[2] + " - R" + instr[3]);
+                	this.m_registers[instr[1]] = this.m_registers[instr[2]] - this.m_registers[instr[3]];
+                	incrementPC();
+                    break;
+                case MUL:
+                    //System.out.println("MUL R" + instr[1] + " = R" + instr[2] + " * R" + instr[3]);
+                	this.m_registers[instr[1]] = this.m_registers[instr[2]] * this.m_registers[instr[3]];
+                	incrementPC();
+                    break;
+                case DIV:
+                    //System.out.println("DIV R" + instr[1] + " = R" + instr[2] + " / R" + instr[3]);
+                	this.m_registers[instr[1]] = this.m_registers[instr[2]] / this.m_registers[instr[3]];
+                	incrementPC();
+                    break;
+                case COPY:
+                    //System.out.println("COPY R" + instr[1] + " = R" + instr[2]);
+                	this.m_registers[instr[1]] = this.m_registers[instr[2]];
+                	incrementPC();
+                    break;
+                case BRANCH:
+                    //System.out.println("BRANCH @" + instr[1]);
+                	physicalAddress = this.adjustOffset(instr[1]);
+            		if(checkAddress(physicalAddress)){
+            			this.setPC(physicalAddress);
+            		}
+            		else{
+            			return;
+            		}
+                    break;
+                case BNE:
+                    //System.out.println("BNE (R" + instr[1] + " != R" + instr[2] + ") @" + instr[3]);
+                	if( this.m_registers[instr[1]] != this.m_registers[instr[2]]){
+                		physicalAddress = this.adjustOffset(instr[3]);
+                		if(checkAddress(physicalAddress)){
+                			this.setPC(physicalAddress);
+                		}
+                		else{
+                			return;
+                		}
+                	}
+                	else{
+                		incrementPC();
+                	}
+                    break;
+                case BLT:
+                    //System.out.println("BLT (R" + instr[1] + " < R" + instr[2] + ") @" + instr[3]);
+                	if( this.m_registers[instr[1]] < this.m_registers[instr[2]]){
+                		physicalAddress = this.adjustOffset(instr[3]);
+                		if(checkAddress(physicalAddress)){
+                			this.setPC(physicalAddress);
+                		}
+                		else{
+                			return;
+                		}
+                	}
+                	else{
+                		incrementPC();
+                	}
+                    break;
+                case POP:
+                    //System.out.println("POP R" + instr[1]);
+                	this.m_registers[instr[1]] = this.pop();
+                	incrementPC();
+                    break;
+                case PUSH:
+                    //System.out.println("PUSH R" + instr[1]);
+                	this.push(this.m_registers[instr[1]]);
+                	incrementPC();
+                    break;
+                case LOAD:
+                	physicalAddress = this.adjustOffset(this.m_registers[instr[2]]);
+                	if(checkAddress(physicalAddress)){
+                		this.m_registers[instr[1]] = this.m_RAM.read(physicalAddress);
+                	}
+                	else{
+                		return;
+                	}
+                	incrementPC();
+                    break;
+                case SAVE:
+                	physicalAddress = this.adjustOffset(this.m_registers[instr[2]]);
+                	if(checkAddress(physicalAddress)){
+                		this.m_RAM.write(physicalAddress,this.m_registers[instr[1]]);
+                	}
+                	else{
+                		return;
+                	}
+                	incrementPC();
+                	break;
+                case TRAP:
+                	return;
+                    //break;
+                default:        // should never be reached
+                    System.out.println("?? ");
+                    break;          
+            }//switch
+    	}//while
     }//run
+    
+    /** 
+     * pass in register that holds an address value 
+     * and check to make sure that that address is inside
+     * the Base and Limit Addresses.
+     *  
+     * @param instr
+     * @return
+     */
+    public boolean checkAddress(int address)
+    {
+    	if(address >= this.getBASE() && 
+    			address <= this.getLIM())
+    	{
+    		return true;
+    	}
+    	
+    	return false;
+    }
+    
+    
+    public void incrementPC()
+    {
+    	this.setPC(this.getPC() + INSTRSIZE);
+    }
+    
+    public void decrementSP(){
+    	this.setSP(this.getSP() - 1);
+    }
+    
+    public void incrementSP(){
+    	this.setSP(this.getSP()+1);
+    }
+    
+    public int adjustOffset(int value)
+    {
+    	return value + this.getBASE();
+    }
+    
+    public void push(int value){
+    	this.m_RAM.write(this.getSP(), value);
+    	decrementSP();
+    }
+    
+    public int pop(){
+    	incrementSP();
+    	int value = this.m_RAM.read(this.getSP());
+    	return value;	
+    }
     
 };//class CPU

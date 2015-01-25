@@ -99,8 +99,17 @@ public class SOS
     public void createProcess(Program prog, int allocSize)
     {
         //%%%WRITE THIS METHOD and any helper methods you deem necessary.%%%
-        
-        
+    	int [] programExport = prog.export();
+    	this.m_CPU.setBASE(4);
+    	this.m_CPU.setLIM(this.m_CPU.getBASE() + allocSize);
+    	
+    	int address = this.m_CPU.getBASE();
+    	for(int i = 0; i<programExport.length; ++i){
+    		this.m_RAM.write(address + i, programExport[i]);
+    	}
+    	
+    	this.m_CPU.setSP(this.m_CPU.getLIM());
+    	
     }//createProcess
         
     /*======================================================================
