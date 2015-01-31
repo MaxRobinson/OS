@@ -9,6 +9,8 @@ import java.util.*;
  * 
  * @author Max Robinson
  * @author Connor Haas
+ * @author Bryce Matsuda
+ * @author Jordan White
  * 
  * @see RAM
  * @see SOS
@@ -186,7 +188,7 @@ public class CPU {
      * 
      * Prints the values of the registers. Useful for debugging.
      */
-    private void regDump() {
+    public void regDump() {
         for (int i = 0; i < NUMGENREG; i++) {
             System.out.print("r" + i + "=" + m_registers[i] + " ");
         }// for
@@ -271,90 +273,125 @@ public class CPU {
      * methods that are above. 
      */
     public void run() {
-        //adjust starting PC register
-        this.m_registers[PC] += this.getBASE();
-        
         while (true) {
-            int[] instr = this.m_RAM.fetch(this.m_registers[PC]);
-
+            
+            // Get first instruction
+            int[] instr = this.m_RAM.fetch(getPC());
+            
+            // Point PC at next instruction
+            if(checkAddress(getPC() + INSTRSIZE)) incrementPC();
+            
+            // Print commands to console
             if (m_verbose == true) {
                 regDump();
                 printInstr(instr);
             }
 
+            // Offset address for branch instructions
             int physicalAddress;
 
             // Decode and execute
             switch (instr[0]) {
+
+            // register = immediate
             case SET:
+                ifBadInstr(instr, 3);
                 this.m_registers[instr[1]] = instr[2];
-                incrementPC();
                 break;
+                
+            // register = register + register
             case ADD:
                 this.m_registers[instr[1]] = this.m_registers[instr[2]]
                         + this.m_registers[instr[3]];
-                incrementPC();
                 break;
+                
+
+            // register = register - register
             case SUB:          
                 this.m_registers[instr[1]] = this.m_registers[instr[2]]
                         - this.m_registers[instr[3]];
-                incrementPC();
                 break;
+
+            // register = register * register    
             case MUL:
                 this.m_registers[instr[1]] = this.m_registers[instr[2]]
                         * this.m_registers[instr[3]];
-                incrementPC();
                 break;
+                
+
+            // register = register / register    
             case DIV:
+                if(this.m_registers[instr[3]] == 0){
+                    m_TH.interruptDivideByZero();
+                }
                 this.m_registers[instr[1]] = this.m_registers[instr[2]]
                         / this.m_registers[instr[3]];
-                incrementPC();
                 break;
+             
+            // register1 = register2   
             case COPY:
+                ifBadInstr(instr, 3);
                 this.m_registers[instr[1]] = this.m_registers[instr[2]];
-                incrementPC();
                 break;
+                
+            // Go to addr
             case BRANCH:
+                ifBadInstr(instr, 2);
+                ifBadInstr(instr, 3);
                 physicalAddress = this.adjustOffset(instr[1]);
+                
+                // Check valid address
                 if (checkAddress(physicalAddress)) {
                     this.setPC(physicalAddress);
                 } else {
-                    return;
+                    m_TH.interruptIllegalMemoryAccess(instr[1]);
                 }
                 break;
+                
+            // Go to addr if reg1 != reg2  
             case BNE:
                 if (this.m_registers[instr[1]] != this.m_registers[instr[2]]) {
                     physicalAddress = this.adjustOffset(instr[3]);
+             
+                    // Check valid address
                     if (checkAddress(physicalAddress)) {
                         this.setPC(physicalAddress);
                     } else {
-                        return;
+                        m_TH.interruptIllegalMemoryAccess(instr[3]);
                     }
-                } else {
-                    incrementPC();
                 }
                 break;
+                
+             // Go to addr if reg1 >= reg2      
             case BLT:
                 if (this.m_registers[instr[1]] < this.m_registers[instr[2]]) {
                     physicalAddress = this.adjustOffset(instr[3]);
+
+                    // Check valid address
                     if (checkAddress(physicalAddress)) {
                         this.setPC(physicalAddress);
                     } else {
-                        return;
+                        m_TH.interruptIllegalMemoryAccess(instr[3]);
                     }
-                } else {
-                    incrementPC();
                 }
                 break;
+                
+            // pop first on stack    
             case POP:
+                ifBadInstr(instr, 2);
+                ifBadInstr(instr, 3);
                 this.m_registers[instr[1]] = this.pop();
-                incrementPC();
                 break;
+            
+            // push onto stack    
             case PUSH:
+                ifBadInstr(instr, 2);
+                ifBadInstr(instr, 3);
                 this.push(this.m_registers[instr[1]]);
-                incrementPC();
                 break;
+            
             case LOAD:
+                ifBadInstr(instr, 3);
                 physicalAddress = this.adjustOffset(this.m_registers[instr[2]]);
                 if (checkAddress(physicalAddress)) {
                     this.m_registers[instr[1]] = this.m_RAM
@@ -362,9 +399,10 @@ public class CPU {
                 } else {
                     return;
                 }
-                incrementPC();
                 break;
+            
             case SAVE:
+                ifBadInstr(instr, 3);
                 physicalAddress = this.adjustOffset(this.m_registers[instr[2]]);
                 if (checkAddress(physicalAddress)) {
                     this.m_RAM.write(physicalAddress,
@@ -372,11 +410,17 @@ public class CPU {
                 } else {
                     return;
                 }
-                incrementPC();
                 break;
+            
             case TRAP:
-                return;
+                ifBadInstr(instr, 1);
+                ifBadInstr(instr, 2);
+                ifBadInstr(instr, 3);
+            	m_TH.systemCall();
+            	break;
+            
             default: // should never be reached
+                m_TH.interruptIllegalInstruction(instr);
                 System.out.println("?? ");
                 break;
             }// switch
@@ -386,6 +430,7 @@ public class CPU {
     /**
      * Pass in register that holds an address value and check to make sure that
      * that address is inside the Base and Limit Addresses.
+     * If outside, then make an interrupt call.
      * 
      * @param address An already adjusted address
      * @return true if the address is between the base and limit addresses 
@@ -395,23 +440,28 @@ public class CPU {
         if (address >= this.getBASE() && address <= this.getLIM()) {
             return true;
         }
-
+        
+        m_TH.interruptIllegalMemoryAccess(address);
         return false;
     }
 
-    public void incrementPC() {
+    private void incrementPC() {
         this.setPC(this.getPC() + INSTRSIZE);
     }
 
-    public void decrementSP() {
-        this.setSP(this.getSP() - SPINCREMENT);
+    private void decrementSP() {
+        if(this.getSP() - SPINCREMENT < this.getBASE()){
+            this.setSP(this.getSP() - SPINCREMENT);
+        }
     }
 
-    public void incrementSP() {
-        this.setSP(this.getSP() + SPINCREMENT);
+    private void incrementSP() {
+        if(this.getSP() + SPINCREMENT > this.getLIM()){
+            this.setSP(this.getSP() + SPINCREMENT);
+        }
     }
     
-    public int adjustOffset(int value) {
+    private int adjustOffset(int value) {
         return value + this.getBASE();
     }
 
@@ -438,4 +488,48 @@ public class CPU {
         return value;
     }
 
+    private void ifBadInstr(int instr[], int instrNumber){
+        /*if(Arrays.equals(instr, new int[] {0, 0, 0, 0})) return;
+        if(instr[instrNumber] != 99999){ 
+            m_TH.interruptIllegalInstruction(instr);
+        }*/
+    }
+    
+    //======================================================================
+    //Callback Interface
+    //----------------------------------------------------------------------
+    /**
+     * TrapHandler
+     *
+     * This interface should be implemented by the operating system to allow the
+     * simulated CPU to generate hardware interrupts and system calls.
+     */
+    public interface TrapHandler
+    {
+        void interruptIllegalMemoryAccess(int addr);
+        void interruptDivideByZero();
+        void interruptIllegalInstruction(int[] instr);
+        void systemCall();
+    };//interface TrapHandler
+
+
+    
+    /**
+     * a reference to the trap handler for this CPU.  On a real CPU this would
+     * simply be an address that the PC register is set to.
+     */
+    private TrapHandler m_TH = null;
+
+
+
+    /**
+     * registerTrapHandler
+     *
+     * allows SOS to register itself as the trap handler 
+     */
+    public void registerTrapHandler(TrapHandler th)
+    {
+        m_TH = th;
+    }
+    
 };// class CPU
