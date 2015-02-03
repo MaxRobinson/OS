@@ -276,7 +276,7 @@ public class CPU {
         while (true) {
             
             // Get first instruction
-            int[] instr = this.m_RAM.fetch(getPC());
+            int[] instr = m_RAM.fetch(getPC());
             
             // Point PC at next instruction
             if(checkAddress(getPC() + INSTRSIZE)) incrementPC();
@@ -293,136 +293,134 @@ public class CPU {
             // Decode and execute
             switch (instr[0]) {
 
-            // register = immediate
-            case SET:
-                ifBadInstr(instr, 3);
-                this.m_registers[instr[1]] = instr[2];
-                break;
-                
-            // register = register + register
-            case ADD:
-                this.m_registers[instr[1]] = this.m_registers[instr[2]]
-                        + this.m_registers[instr[3]];
-                break;
-                
-
-            // register = register - register
-            case SUB:          
-                this.m_registers[instr[1]] = this.m_registers[instr[2]]
-                        - this.m_registers[instr[3]];
-                break;
-
-            // register = register * register    
-            case MUL:
-                this.m_registers[instr[1]] = this.m_registers[instr[2]]
-                        * this.m_registers[instr[3]];
-                break;
-                
-
-            // register = register / register    
-            case DIV:
-                if(this.m_registers[instr[3]] == 0){
-                    m_TH.interruptDivideByZero();
-                }
-                this.m_registers[instr[1]] = this.m_registers[instr[2]]
-                        / this.m_registers[instr[3]];
-                break;
-             
-            // register1 = register2   
-            case COPY:
-                ifBadInstr(instr, 3);
-                this.m_registers[instr[1]] = this.m_registers[instr[2]];
-                break;
-                
-            // Go to addr
-            case BRANCH:
-                ifBadInstr(instr, 2);
-                ifBadInstr(instr, 3);
-                physicalAddress = this.adjustOffset(instr[1]);
-                
-                // Check valid address
-                if (checkAddress(physicalAddress)) {
-                    this.setPC(physicalAddress);
-                } else {
-                    m_TH.interruptIllegalMemoryAccess(instr[1]);
-                }
-                break;
-                
-            // Go to addr if reg1 != reg2  
-            case BNE:
-                if (this.m_registers[instr[1]] != this.m_registers[instr[2]]) {
-                    physicalAddress = this.adjustOffset(instr[3]);
-             
+                // register = immediate
+                case SET:
+                    ifBadInstr(instr, 3);
+                    m_registers[instr[1]] = instr[2];
+                    break;
+                    
+                // register = register + register
+                case ADD:
+                    m_registers[instr[1]] = m_registers[instr[2]]
+                            + m_registers[instr[3]];
+                    break;
+                    
+    
+                // register = register - register
+                case SUB:          
+                    m_registers[instr[1]] = m_registers[instr[2]]
+                            - m_registers[instr[3]];
+                    break;
+    
+                // register = register * register    
+                case MUL:
+                    m_registers[instr[1]] = m_registers[instr[2]]
+                            * m_registers[instr[3]];
+                    break;
+                    
+    
+                // register = register / register    
+                case DIV:
+                    if(m_registers[instr[3]] == 0){
+                        m_TH.interruptDivideByZero();
+                    }
+                    m_registers[instr[1]] = m_registers[instr[2]]
+                            / m_registers[instr[3]];
+                    break;
+                 
+                // register1 = register2   
+                case COPY:
+                    ifBadInstr(instr, 3);
+                    m_registers[instr[1]] = m_registers[instr[2]];
+                    break;
+                    
+                // Go to addr
+                case BRANCH:
+                    ifBadInstr(instr, 2);
+                    ifBadInstr(instr, 3);
+                    physicalAddress = adjustOffset(instr[1]);
+                    
                     // Check valid address
                     if (checkAddress(physicalAddress)) {
-                        this.setPC(physicalAddress);
+                        setPC(physicalAddress);
                     } else {
-                        m_TH.interruptIllegalMemoryAccess(instr[3]);
+                        m_TH.interruptIllegalMemoryAccess(instr[1]);
                     }
-                }
-                break;
+                    break;
+                    
+                // Go to addr if reg1 != reg2  
+                case BNE:
+                    if (m_registers[instr[1]] != m_registers[instr[2]]) {
+                        physicalAddress = adjustOffset(instr[3]);
+                 
+                        // Check valid address
+                        if (checkAddress(physicalAddress)) {
+                            setPC(physicalAddress);
+                        } else {
+                            m_TH.interruptIllegalMemoryAccess(instr[3]);
+                        }
+                    }
+                    break;
+                    
+                 // Go to addr if reg1 >= reg2      
+                case BLT:
+                    if (m_registers[instr[1]] < m_registers[instr[2]]) {
+                        physicalAddress = adjustOffset(instr[3]);
+    
+                        // Check valid address
+                        if (checkAddress(physicalAddress)) {
+                            setPC(physicalAddress);
+                        } else {
+                            m_TH.interruptIllegalMemoryAccess(instr[3]);
+                        }
+                    }
+                    break;
+                    
+                // pop first on stack    
+                case POP:
+                    ifBadInstr(instr, 2);
+                    ifBadInstr(instr, 3);
+                    m_registers[instr[1]] = pop();
+                    break;
                 
-             // Go to addr if reg1 >= reg2      
-            case BLT:
-                if (this.m_registers[instr[1]] < this.m_registers[instr[2]]) {
-                    physicalAddress = this.adjustOffset(instr[3]);
-
-                    // Check valid address
+                // push onto stack    
+                case PUSH:
+                    ifBadInstr(instr, 2);
+                    ifBadInstr(instr, 3);
+                    push(m_registers[instr[1]]);
+                    break;
+                
+                case LOAD:
+                    ifBadInstr(instr, 3);
+                    physicalAddress = adjustOffset(m_registers[instr[2]]);
                     if (checkAddress(physicalAddress)) {
-                        this.setPC(physicalAddress);
+                        m_registers[instr[1]] = m_RAM.read(physicalAddress);
                     } else {
-                        m_TH.interruptIllegalMemoryAccess(instr[3]);
+                        return;
                     }
-                }
-                break;
+                    break;
                 
-            // pop first on stack    
-            case POP:
-                ifBadInstr(instr, 2);
-                ifBadInstr(instr, 3);
-                this.m_registers[instr[1]] = this.pop();
-                break;
-            
-            // push onto stack    
-            case PUSH:
-                ifBadInstr(instr, 2);
-                ifBadInstr(instr, 3);
-                this.push(this.m_registers[instr[1]]);
-                break;
-            
-            case LOAD:
-                ifBadInstr(instr, 3);
-                physicalAddress = this.adjustOffset(this.m_registers[instr[2]]);
-                if (checkAddress(physicalAddress)) {
-                    this.m_registers[instr[1]] = this.m_RAM
-                            .read(physicalAddress);
-                } else {
-                    return;
-                }
-                break;
-            
-            case SAVE:
-                ifBadInstr(instr, 3);
-                physicalAddress = this.adjustOffset(this.m_registers[instr[2]]);
-                if (checkAddress(physicalAddress)) {
-                    this.m_RAM.write(physicalAddress,
-                            this.m_registers[instr[1]]);
-                } else {
-                    return;
-                }
-                break;
-            
-            case TRAP:
-                ifBadInstr(instr, 1);
-                ifBadInstr(instr, 2);
-                ifBadInstr(instr, 3);
-            	m_TH.systemCall();
-            	break;
-            
-            default: // should never be reached
-                m_TH.interruptIllegalInstruction(instr);
-                System.out.println("?? ");
-                break;
+                case SAVE:
+                    ifBadInstr(instr, 3);
+                    physicalAddress = adjustOffset(m_registers[instr[2]]);
+                    if (checkAddress(physicalAddress)) {
+                        m_RAM.write(physicalAddress, m_registers[instr[1]]);
+                    } else {
+                        return;
+                    }
+                    break;
+                
+                case TRAP:
+                    ifBadInstr(instr, 1);
+                    ifBadInstr(instr, 2);
+                    ifBadInstr(instr, 3);
+                	m_TH.systemCall();
+                	break;
+                
+                default: // should never be reached
+                    m_TH.interruptIllegalInstruction(instr);
+                    System.out.println("?? ");
+                    break;
             }// switch
         }// while
     }// run
@@ -437,7 +435,7 @@ public class CPU {
      *              inclusive.
      */
     public boolean checkAddress(int address) {
-        if (address >= this.getBASE() && address <= this.getLIM()) {
+        if (address >= getBASE() && address <= getLIM()) {
             return true;
         }
         
@@ -446,23 +444,23 @@ public class CPU {
     }
 
     private void incrementPC() {
-        this.setPC(this.getPC() + INSTRSIZE);
+        setPC(getPC() + INSTRSIZE);
     }
 
     private void decrementSP() {
-        if(this.getSP() - SPINCREMENT > this.getBASE()){
-            this.setSP(this.getSP() - SPINCREMENT);
+        if(getSP() - SPINCREMENT > getBASE()){
+            setSP(getSP() - SPINCREMENT);
         }
     }
 
     private void incrementSP() {
-        if(this.getSP() + SPINCREMENT < this.getLIM()){
-            this.setSP(this.getSP() + SPINCREMENT);
+        if(getSP() + SPINCREMENT < getLIM()){
+            setSP(getSP() + SPINCREMENT);
         }
     }
     
     private int adjustOffset(int value) {
-        return value + this.getBASE();
+        return value + getBASE();
     }
 
     /**
@@ -473,7 +471,7 @@ public class CPU {
      */
     public void push(int value) {
         decrementSP();
-        this.m_RAM.write(this.getSP(), value);
+        m_RAM.write(getSP(), value);
     }
     
     /**
@@ -483,7 +481,7 @@ public class CPU {
      * @return value
      */
     public int pop() {
-        int value = this.m_RAM.read(this.getSP());
+        int value = m_RAM.read(getSP());
         incrementSP();
         return value;
     }
