@@ -450,13 +450,13 @@ public class CPU {
     }
 
     private void decrementSP() {
-        if(this.getSP() - SPINCREMENT < this.getBASE()){
+        if(this.getSP() - SPINCREMENT > this.getBASE()){
             this.setSP(this.getSP() - SPINCREMENT);
         }
     }
 
     private void incrementSP() {
-        if(this.getSP() + SPINCREMENT > this.getLIM()){
+        if(this.getSP() + SPINCREMENT < this.getLIM()){
             this.setSP(this.getSP() + SPINCREMENT);
         }
     }
@@ -472,8 +472,8 @@ public class CPU {
      * @param value
      */
     public void push(int value) {
-        this.m_RAM.write(this.getSP(), value);
         decrementSP();
+        this.m_RAM.write(this.getSP(), value);
     }
     
     /**
@@ -483,8 +483,8 @@ public class CPU {
      * @return value
      */
     public int pop() {
-        incrementSP();
         int value = this.m_RAM.read(this.getSP());
+        incrementSP();
         return value;
     }
 
@@ -533,3 +533,4 @@ public class CPU {
     }
     
 };// class CPU
+
