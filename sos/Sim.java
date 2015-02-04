@@ -32,7 +32,7 @@ public class Sim {
         SOS os = new SOS(cpu, ram);
 
         Program prog = new Program();
-        if (prog.load("crazycount.asm",
+        if (prog.load("robinsom16_matsuda16_white16_hw2_test_ILLEGAL.asm", 
                 false) != 0) {
             // Error loading program so exit
             return;

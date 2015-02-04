@@ -123,6 +123,7 @@ public class SOS implements CPU.TrapHandler {
      */
     public void createProcess(Program prog, int allocSize) {
         int[] programExport = prog.export();
+        
         this.m_CPU.setBASE(17);
         this.m_CPU.setLIM(this.m_CPU.getBASE() + allocSize);
         this.m_CPU.setSP(this.m_CPU.getLIM());
@@ -151,10 +152,12 @@ public class SOS implements CPU.TrapHandler {
      * ----------------------------------------------------------------------
      */
 
-    // <insert header comment here>
+    /**
+     * Handles finding the systemCall that was made and executing 
+     * the correct system call. Receives the systemCall value by 
+     * popping the top element off of the stack.  
+     */
     public void systemCall() {
-        // %%%REPLACE THESE LINES WITH APPROPRIATE CODE
-        //System.out.println("TRAP handled!");
         
         int syscall = m_CPU.pop();
         
@@ -173,8 +176,6 @@ public class SOS implements CPU.TrapHandler {
                 break;
                 
         }
-        
-//        System.exit(0);
     }
 
     public void interruptIllegalMemoryAccess(int addr){
@@ -193,6 +194,11 @@ public class SOS implements CPU.TrapHandler {
         System.exit(0);
     }
 
+    /**
+     * Prints a given error message that is passed in with the prefix ERROR.
+     * 
+     * @param message   a given error message for printing
+     */
     public void errorMessage(String message) {
         System.out.println("ERROR: " + message);
     }
@@ -214,6 +220,17 @@ public class SOS implements CPU.TrapHandler {
         m_CPU.push(42);
     }
     
+    /**
+     * Calls the CPU regDump function to provide debugging information. 
+     * In addition, prints to the console the top 3 things on the stack. 
+     * 
+     * WARNING: If there are not three things on the stack, the pop function
+     *      is written such that it will not go beyond the limit of the program.
+     *      This means that there is a chance that an entry on the stack can be
+     *      popped multiple times, or whatever was at the base of the stack 
+     *      could be read, even if there is nothing on the stack. 
+     *      THIS ONLY MATTERS IF THERE ARE FEWER THAN 3 THINGS ON THE STACK.
+     */
     private void syscallCoredump(){
         m_CPU.regDump();
         System.out.println("CORE DUMP, STACK: " + m_CPU.pop()+ ", "+ m_CPU.pop()

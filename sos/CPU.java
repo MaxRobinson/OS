@@ -66,7 +66,7 @@ public class CPU {
     /**
      * specifies whether the CPU should output details of its work
      **/
-    private boolean m_verbose = true;
+    private boolean m_verbose = false;
 
     /**
      * This array contains all the registers on the "chip".
@@ -295,7 +295,6 @@ public class CPU {
 
                 // register = immediate
                 case SET:
-                    ifBadInstr(instr, 3);
                     m_registers[instr[1]] = instr[2];
                     break;
                     
@@ -330,14 +329,11 @@ public class CPU {
                  
                 // register1 = register2   
                 case COPY:
-                    ifBadInstr(instr, 3);
                     m_registers[instr[1]] = m_registers[instr[2]];
                     break;
                     
                 // Go to addr
                 case BRANCH:
-                    ifBadInstr(instr, 2);
-                    ifBadInstr(instr, 3);
                     physicalAddress = adjustOffset(instr[1]);
                     
                     // Check valid address
@@ -378,20 +374,15 @@ public class CPU {
                     
                 // pop first on stack    
                 case POP:
-                    ifBadInstr(instr, 2);
-                    ifBadInstr(instr, 3);
                     m_registers[instr[1]] = pop();
                     break;
                 
                 // push onto stack    
                 case PUSH:
-                    ifBadInstr(instr, 2);
-                    ifBadInstr(instr, 3);
                     push(m_registers[instr[1]]);
                     break;
                 
                 case LOAD:
-                    ifBadInstr(instr, 3);
                     physicalAddress = adjustOffset(m_registers[instr[2]]);
                     if (checkAddress(physicalAddress)) {
                         m_registers[instr[1]] = m_RAM.read(physicalAddress);
@@ -401,7 +392,6 @@ public class CPU {
                     break;
                 
                 case SAVE:
-                    ifBadInstr(instr, 3);
                     physicalAddress = adjustOffset(m_registers[instr[2]]);
                     if (checkAddress(physicalAddress)) {
                         m_RAM.write(physicalAddress, m_registers[instr[1]]);
@@ -411,9 +401,6 @@ public class CPU {
                     break;
                 
                 case TRAP:
-                    ifBadInstr(instr, 1);
-                    ifBadInstr(instr, 2);
-                    ifBadInstr(instr, 3);
                 	m_TH.systemCall();
                 	break;
                 
@@ -448,13 +435,13 @@ public class CPU {
     }
 
     private void decrementSP() {
-        if(getSP() - SPINCREMENT > getBASE()){
+        if(getSP() - SPINCREMENT >= getBASE()){
             setSP(getSP() - SPINCREMENT);
         }
     }
 
     private void incrementSP() {
-        if(getSP() + SPINCREMENT < getLIM()){
+        if(getSP() + SPINCREMENT <= getLIM()){
             setSP(getSP() + SPINCREMENT);
         }
     }
@@ -486,12 +473,6 @@ public class CPU {
         return value;
     }
 
-    private void ifBadInstr(int instr[], int instrNumber){
-        /*if(Arrays.equals(instr, new int[] {0, 0, 0, 0})) return;
-        if(instr[instrNumber] != 99999){ 
-            m_TH.interruptIllegalInstruction(instr);
-        }*/
-    }
     
     //======================================================================
     //Callback Interface
