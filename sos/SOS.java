@@ -22,10 +22,21 @@ public class SOS implements CPU.TrapHandler {
     public static final int SYSCALL_EXIT = 0; /* exit the current program */
     public static final int SYSCALL_OUTPUT = 1; /* outputs a number */
     public static final int SYSCALL_GETPID = 2; /* get current process id */
+    public static final int SYSCALL_OPEN = 3; /* access a device */
+    public static final int SYSCALL_CLOSE = 4; /* release a device */
+    public static final int SYSCALL_READ = 5; /* get input from device */
+    public static final int SYSCALL_WRITE = 6; /* send output to device */
     public static final int SYSCALL_COREDUMP = 9; /*
                                                    * print process state and
                                                    * exit
                                                    */
+    // Error codes for system calls
+    public static final int SYSCALL_SUCCESS = 0; 
+    public static final int SYSCALL_OPEN_ERROR = -3;
+    public static final int SYSCALL_CLOSE_ERROR = -4;
+    public static final int SYSCALL_READ_ERROR = -5;
+    public static final int SYSCALL_WRITE_ERROR = -6;
+    
 
     // ======================================================================
     // Member variables
@@ -47,6 +58,16 @@ public class SOS implements CPU.TrapHandler {
      **/
     private RAM m_RAM = null;
 
+    /**
+     * Holds the current process.
+     */
+    private ProcessControlBlock m_currProcess = null;
+
+    /**
+     * 
+     */
+    private Vector<DeviceInfo> m_devices = null;
+
     /*
      * ======================================================================
      * Constructors & Debugging
@@ -61,6 +82,8 @@ public class SOS implements CPU.TrapHandler {
         m_CPU = c;
         m_RAM = r;
         m_CPU.registerTrapHandler(this);
+        m_currProcess = new ProcessControlBlock(42);
+        m_devices = new Vector<DeviceInfo>();
     }// SOS ctor
 
     /**
@@ -123,7 +146,7 @@ public class SOS implements CPU.TrapHandler {
      */
     public void createProcess(Program prog, int allocSize) {
         int[] programExport = prog.export();
-        
+
         this.m_CPU.setBASE(17);
         this.m_CPU.setLIM(this.m_CPU.getBASE() + allocSize);
         this.m_CPU.setSP(this.m_CPU.getLIM());
@@ -133,8 +156,6 @@ public class SOS implements CPU.TrapHandler {
         for (int i = 0; i < programExport.length; ++i) {
             this.m_RAM.write(address + i, programExport[i]);
         }
-
-        
 
     }// createProcess
 
@@ -153,15 +174,15 @@ public class SOS implements CPU.TrapHandler {
      */
 
     /**
-     * Handles finding the systemCall that was made and executing 
-     * the correct system call. Receives the systemCall value by 
-     * popping the top element off of the stack.  
+     * Handles finding the systemCall that was made and executing the correct
+     * system call. Receives the systemCall value by popping the top element off
+     * of the stack.
      */
     public void systemCall() {
-        
+
         int syscall = m_CPU.pop();
-        
-        switch(syscall){
+
+        switch (syscall) {
             case SYSCALL_EXIT:
                 syscallExit();
                 break;
@@ -171,16 +192,33 @@ public class SOS implements CPU.TrapHandler {
             case SYSCALL_GETPID:
                 syscallGetpid();
                 break;
+            case SYSCALL_OPEN:
+                syscallOpen();
+                break;
+            case SYSCALL_CLOSE:
+                syscallClose();
+                break;
+            case SYSCALL_READ:
+                syscallRead();
+                break;
+            case SYSCALL_WRITE:
+                syscallWrite();
+                break;
             case SYSCALL_COREDUMP:
                 syscallCoredump();
                 break;
-                
+
         }
     }
 
-    public void interruptIllegalMemoryAccess(int addr){
-    	errorMessage("Illegal Memory Access @: " + addr);
-    	System.exit(0);
+    /*
+     * ======================================================================
+     * Interrupts
+     * ----------------------------------------------------------------------
+     */
+    public void interruptIllegalMemoryAccess(int addr) {
+        errorMessage("Illegal Memory Access @: " + addr);
+        System.exit(0);
     }
 
     public void interruptDivideByZero() {
@@ -197,44 +235,328 @@ public class SOS implements CPU.TrapHandler {
     /**
      * Prints a given error message that is passed in with the prefix ERROR.
      * 
-     * @param message   a given error message for printing
+     * @param message
+     *            a given error message for printing
      */
     public void errorMessage(String message) {
         System.out.println("ERROR: " + message);
     }
-    
-    
+
+    /*
+     * ======================================================================
+     * System Call Methods
+     * ----------------------------------------------------------------------
+     */
+
     /* PRIVATE HELPER METHODS FOR SYS CALLS ********* */
-    
-    
-    private void syscallExit(){
+    private void syscallExit() {
         System.exit(0);
     }
-    
-    private void syscallOutput(){
+
+    private void syscallOutput() {
         int value = m_CPU.pop();
         System.out.println("OUTPUT: " + value);
     }
-    
-    private void syscallGetpid(){
-        m_CPU.push(42);
+
+    private void syscallGetpid() {
+        int pid = m_currProcess.getProcessId();
+        m_CPU.push(pid);
+    }
+
+    /**
+     * 
+     */
+    private void syscallOpen() {
+        int deviceNumber = m_CPU.pop();
+        DeviceInfo deviceInfo = findDeviceInfo(deviceNumber);
+        
+        //If device was not found, or not sharable, or not available, error.
+        if(deviceInfo == null){
+            syscallError(SYSCALL_OPEN_ERROR);
+            return;
+        }
+        
+        if ( (!deviceInfo.getDevice().isSharable() 
+                && !deviceInfo.getDevice().isAvailable())
+                || alreadyOpen(deviceInfo) ){
+            syscallError(SYSCALL_OPEN_ERROR);
+            return;
+        }
+        
+        //add current process to device process list. 
+        deviceInfo.addProcess(m_currProcess);
+        syscallSuccess();
+        
+      //debugging
+        System.out.println("OPEN CONNECTION");
     }
     
     /**
-     * Calls the CPU regDump function to provide debugging information. 
-     * In addition, prints to the console the top 3 things on the stack. 
      * 
-     * WARNING: If there are not three things on the stack, the pop function
-     *      is written such that it will not go beyond the limit of the program.
-     *      This means that there is a chance that an entry on the stack can be
-     *      popped multiple times, or whatever was at the base of the stack 
-     *      could be read, even if there is nothing on the stack. 
-     *      THIS ONLY MATTERS IF THERE ARE FEWER THAN 3 THINGS ON THE STACK.
      */
-    private void syscallCoredump(){
+    private void syscallClose() {
+        int deviceNumber = m_CPU.pop();
+        DeviceInfo deviceInfo = findDeviceInfo(deviceNumber);
+        
+        //If device was not found, or not open yet, error
+        if(deviceInfo == null){
+            syscallError(SYSCALL_CLOSE_ERROR);
+            return;
+        }
+        
+        if(!alreadyOpen(deviceInfo)){
+            syscallError(SYSCALL_CLOSE_ERROR);
+            return;
+        }
+        
+        //remove current process from device process list. 
+        deviceInfo.removeProcess(m_currProcess);
+        syscallSuccess();
+        
+        //debugging
+        System.out.println("CLOSE CONNECTION");
+    }
+    
+    /**
+     * 
+     */
+    private void syscallRead() {
+        int address = m_CPU.pop();
+        int deviceNumber = m_CPU.pop();
+        
+        //Get device info 
+        DeviceInfo deviceInfo = findDeviceInfo(deviceNumber);
+        
+        //if device was not found, or not open yet, error.
+        if(deviceInfo == null){
+            syscallError(SYSCALL_READ_ERROR);
+            return;
+        }
+        
+        //get device and read in value.
+        Device device = deviceInfo.getDevice(); 
+        
+        if(!alreadyOpen(deviceInfo) || !device.isReadable()){
+            syscallError(SYSCALL_READ_ERROR);
+            return;
+        }
+        
+        int value = device.read(address);
+        
+        //push value onto calling process' stack
+        m_CPU.push(value);
+        syscallSuccess();
+        
+      //debugging
+        System.out.println("READ CONNECTION: " + value);
+        
+    }
+
+    /**
+     * Pop data, address, and device id off the calling process's stack and 
+     * retrieve the Device Object Associated with the device ID.
+     */
+    private void syscallWrite() {
+        int data = m_CPU.pop();
+        int address = m_CPU.pop();
+        int deviceNumber = m_CPU.pop();
+        
+        //Get device info and the actual device from the info
+        DeviceInfo deviceInfo = findDeviceInfo(deviceNumber);
+        
+        //if device was not found, or not open yet, error.
+        if(deviceInfo == null){
+            syscallError(SYSCALL_WRITE_ERROR);
+            return;
+        }
+        
+        Device device = deviceInfo.getDevice();
+        
+        if(!alreadyOpen(deviceInfo) || !device.isWriteable()){
+            syscallError(SYSCALL_WRITE_ERROR);
+            return;
+        }
+        
+         
+        device.write(address, data);
+        syscallSuccess();
+        
+      //debugging
+        System.out.println("WRITE CONNECTION");
+    }
+    
+    /**
+     * Calls the CPU regDump function to provide debugging information. In
+     * addition, prints to the console the top 3 things on the stack.
+     * 
+     * WARNING: If there are not three things on the stack, the pop function is
+     * written such that it will not go beyond the limit of the program. This
+     * means that there is a chance that an entry on the stack can be popped
+     * multiple times, or whatever was at the base of the stack could be read,
+     * even if there is nothing on the stack. THIS ONLY MATTERS IF THERE ARE
+     * FEWER THAN 3 THINGS ON THE STACK.
+     */
+    private void syscallCoredump() {
         m_CPU.regDump();
-        System.out.println("CORE DUMP, STACK: " + m_CPU.pop()+ ", "+ m_CPU.pop()
-                + ", " + m_CPU.pop());
+        System.out.println("CORE DUMP, STACK: " + m_CPU.pop() + ", "
+                + m_CPU.pop() + ", " + m_CPU.pop());
         syscallExit();
     }
+    
+    
+    // SYS CALL HELPER METHODS
+    
+    /**
+     * 
+     * @param deviceNumber
+     * @return deviceInfo for device number given
+     *              IF device not found, return null. 
+     */
+    private DeviceInfo findDeviceInfo(int deviceNumber){
+      
+        //run through the list of devices to see if there is an id match
+        for(int i = 0; i < m_devices.size(); i++){
+            if(m_devices.get(i).getId() == deviceNumber ){
+                DeviceInfo deviceInfo = m_devices.get(i);
+                return deviceInfo;
+            }
+        }
+        return null;
+    }
+    
+    private void syscallSuccess(){
+        m_CPU.push(SYSCALL_SUCCESS);
+    }
+    
+    private void syscallError(int errorCode){
+        m_CPU.push(errorCode);
+    }
+    
+    private boolean alreadyOpen(DeviceInfo deviceInfo){
+        if(deviceInfo.containsProcess(m_currProcess)){
+            return true;
+        }
+        return false;
+    }
+    
+    
+
+    // ======================================================================
+    // Inner Classes
+    // ----------------------------------------------------------------------
+
+    /**
+     * class ProcessControlBlock
+     * 
+     * This class contains information about a currently active process.
+     */
+    private class ProcessControlBlock {
+        /**
+         * a unique id for this process
+         */
+        private int processId = 0;
+
+        /**
+         * constructor
+         * 
+         * @param pid
+         *            a process id for the process. The caller is responsible
+         *            for making sure it is unique.
+         */
+        public ProcessControlBlock(int pid) {
+            this.processId = pid;
+        }
+
+        /**
+         * @return the current process' id
+         */
+        public int getProcessId() {
+            return this.processId;
+        }
+
+    }// class ProcessControlBlock
+
+    /**
+     * class DeviceInfo
+     * 
+     * This class contains information about a device that is currently
+     * registered with the system.
+     */
+    private class DeviceInfo {
+        /** every device has a unique id */
+        private int id;
+        /** a reference to the device driver for this device */
+        private Device device;
+        /** a list of processes that have opened this device */
+        private Vector<ProcessControlBlock> procs;
+
+        /**
+         * constructor
+         * 
+         * @param d
+         *            a reference to the device driver for this device
+         * @param initID
+         *            the id for this device. The caller is responsible for
+         *            guaranteeing that this is a unique id.
+         */
+        public DeviceInfo(Device d, int initID) {
+            this.id = initID;
+            this.device = d;
+            d.setId(initID);
+            this.procs = new Vector<ProcessControlBlock>();
+        }
+
+        /** @return the device's id */
+        public int getId() {
+            return this.id;
+        }
+
+        /** @return this device's driver */
+        public Device getDevice() {
+            return this.device;
+        }
+
+        /** Register a new process as having opened this device */
+        public void addProcess(ProcessControlBlock pi) {
+            procs.add(pi);
+        }
+
+        /** Register a process as having closed this device */
+        public void removeProcess(ProcessControlBlock pi) {
+            procs.remove(pi);
+        }
+
+        /** Does the given process currently have this device opened? */
+        public boolean containsProcess(ProcessControlBlock pi) {
+            return procs.contains(pi);
+        }
+
+        /** Is this device currently not opened by any process? */
+        public boolean unused() {
+            return procs.size() == 0;
+        }
+
+    }// class DeviceInfo
+
+    /*
+     * ======================================================================
+     * Device Management Methods
+     * ----------------------------------------------------------------------
+     */
+
+    /**
+     * registerDevice
+     * 
+     * adds a new device to the list of devices managed by the OS
+     * 
+     * @param dev
+     *            the device driver
+     * @param id
+     *            the id to assign to this device
+     * 
+     */
+    public void registerDevice(Device dev, int id) {
+        m_devices.add(new DeviceInfo(dev, id));
+    }// registerDevice
+
 };// class SOS
