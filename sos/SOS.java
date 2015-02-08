@@ -286,9 +286,6 @@ public class SOS implements CPU.TrapHandler {
         //add current process to device process list. 
         deviceInfo.addProcess(m_currProcess);
         syscallSuccess();
-        
-      //debugging
-        System.out.println("OPEN CONNECTION");
     }
     
     /**
@@ -312,9 +309,6 @@ public class SOS implements CPU.TrapHandler {
         //remove current process from device process list. 
         deviceInfo.removeProcess(m_currProcess);
         syscallSuccess();
-        
-        //debugging
-        System.out.println("CLOSE CONNECTION");
     }
     
     /**
@@ -346,10 +340,6 @@ public class SOS implements CPU.TrapHandler {
         //push value onto calling process' stack
         m_CPU.push(value);
         syscallSuccess();
-        
-      //debugging
-        System.out.println("READ CONNECTION: " + value);
-        
     }
 
     /**
@@ -380,9 +370,6 @@ public class SOS implements CPU.TrapHandler {
          
         device.write(address, data);
         syscallSuccess();
-        
-      //debugging
-        System.out.println("WRITE CONNECTION");
     }
     
     /**

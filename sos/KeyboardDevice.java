@@ -40,7 +40,7 @@ public class KeyboardDevice implements Device{
      */
     @Override
     public int read(int addr) { 
-        return (int)(Math.random()*10000);
+        return (int)(Math.random()*10);
     }
 
     @Override
