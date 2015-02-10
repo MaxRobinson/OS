@@ -1,5 +1,10 @@
 ####################################################
-#This program prints ten keystrokes to the console
+#This program prints a given number of
+#the fibbinaci sequence to the console.
+#The number of fibbinaci numbers printed is dictated by 
+#keyboard input. (a random value between 1 and 10 for now)
+#To change the number printed, the keyboard outputs must be
+#modified. 
 #The keyboard device should have id 0.  The console
 #device should have id 1.
 ###################################################

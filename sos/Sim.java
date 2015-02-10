@@ -41,7 +41,7 @@ public class Sim
 
         //Load the program into RAM
         Program prog = new Program();
-        if (prog.load("readwrite.asm", false) != 0)
+        if (prog.load("print10.asm", false) != 0)
         {
             //Error loading program so exit
             return;
@@ -93,7 +93,7 @@ public class Sim
      */
     public static void main(String[] args)
     {
-        //runSimple();  //%%%You will eventually replace this with a call to runIO();
+        //runSimple(); 
         runIO();
         
         System.out.println("END OF SIMULATION");

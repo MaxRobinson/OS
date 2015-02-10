@@ -10,6 +10,7 @@ import java.util.*;
  * 
  * @author Max Robinson
  * @author Connor Haas
+ * @author Jason Vanderwerf
  * 
  */
 
@@ -216,16 +217,42 @@ public class SOS implements CPU.TrapHandler {
      * Interrupts
      * ----------------------------------------------------------------------
      */
+    
+    /**
+     * interuptIllegalMemoryAccess
+     * 
+     * Passes a string which is to be printed out via the errorMessage
+     * method that contains the type of error and the address where the error
+     * occurred. 
+     * calls System.exit
+     * 
+     * @param addr   the address that was trying to be access that is illegal
+     */
     public void interruptIllegalMemoryAccess(int addr) {
         errorMessage("Illegal Memory Access @: " + addr);
         System.exit(0);
     }
-
+    
+    /**
+     * interruptDivideByZero
+     * 
+     * Passes a string which is to be printed out via the errorMessage 
+     * method. 
+     */
     public void interruptDivideByZero() {
         errorMessage("Divided By Zero");
         System.exit(0);
     }
 
+    /**
+     * interruptIllegalInstruction
+     * 
+     * Passes a string which is to be printed out via the errorMessage 
+     * method. The message to be printed contains the instruction that was 
+     * illegal. 
+     * 
+     * @param instr     the instruction that was illegal
+     */
     public void interruptIllegalInstruction(int[] instr) {
         errorMessage("Illegal Instruction: " + instr[0] + " " + instr[1] + " "
                 + instr[2] + " " + instr[3]);
@@ -249,22 +276,47 @@ public class SOS implements CPU.TrapHandler {
      */
 
     /* PRIVATE HELPER METHODS FOR SYS CALLS ********* */
+    /**
+     * Executes a system exit command
+     */
     private void syscallExit() {
         System.exit(0);
     }
 
+    /**
+     * syscallOutput
+     * 
+     * This method pops a value off of the calling process' stack and then 
+     * prints that value to the console. 
+     */
     private void syscallOutput() {
         int value = m_CPU.pop();
         System.out.println("OUTPUT: " + value);
     }
 
+    /**
+     * syscallGetpid
+     * 
+     * Pushes the value of the current process ID onto the calling process' 
+     * stack. 
+     */
     private void syscallGetpid() {
         int pid = m_currProcess.getProcessId();
         m_CPU.push(pid);
     }
 
     /**
+     * syscallOpen
      * 
+     * Pop's the device number to be opened off of the calling process' stack 
+     * and looks to see if a device with that device number exists. 
+     * If a device with that number does not exists, a syscallError is made. 
+     * If the device is found the following conditions are then checked: 
+     *      - Is the device in use && not sharable. 
+     *      - Is the device already open. 
+     * If any of these cases are true, a syscallError is made.
+     * Otherwise, the current process is added to the deviceInfo
+     *      A syscallSuccess is then made.
      */
     private void syscallOpen() {
         int deviceNumber = m_CPU.pop();
@@ -276,6 +328,7 @@ public class SOS implements CPU.TrapHandler {
             return;
         }
         
+        //Can the device be accessed. Is it already open
         if ( (!deviceInfo.getDevice().isSharable() 
                 && !deviceInfo.getDevice().isAvailable())
                 || alreadyOpen(deviceInfo) ){
@@ -286,10 +339,19 @@ public class SOS implements CPU.TrapHandler {
         //add current process to device process list. 
         deviceInfo.addProcess(m_currProcess);
         syscallSuccess();
-    }
+    }//syscallOpen
     
     /**
+     * syscallClose
      * 
+     * Pop's the device number to be opened off of the calling process' stack 
+     * and looks to see if a device with that device number exists.
+     * If a device with that number does not exists, a syscallError is made. 
+     * If the device is found the following conditions are then checked:
+     *      - Is the device not already open
+     * If any of these cases are true, a syscallError is made.
+     * Otherwise, the current process is removed from the deviceInfo
+     *      A syscallSuccess is then made.
      */
     private void syscallClose() {
         int deviceNumber = m_CPU.pop();
@@ -301,6 +363,7 @@ public class SOS implements CPU.TrapHandler {
             return;
         }
         
+        //Is the device not already open
         if(!alreadyOpen(deviceInfo)){
             syscallError(SYSCALL_CLOSE_ERROR);
             return;
@@ -309,10 +372,21 @@ public class SOS implements CPU.TrapHandler {
         //remove current process from device process list. 
         deviceInfo.removeProcess(m_currProcess);
         syscallSuccess();
-    }
+    }//syscallClose
     
     /**
+     * syscallRead
      * 
+     * Pop's the device number to be opened off of the calling process' stack 
+     * and looks to see if a device with that device number exists.
+     * If a device with that number does not exists, a syscallError is made. 
+     * If the device is found the following conditions are then checked:
+     *      - Is the device not already open
+     *      - Is the device not readable 
+     * If any of these cases are true, a syscallError is made.
+     * Otherwise, a value is read in from the device, and the value is then 
+     * pushed onto the calling process' stack. 
+     *      A syscallSuccess is then made.
      */
     private void syscallRead() {
         int address = m_CPU.pop();
@@ -330,6 +404,7 @@ public class SOS implements CPU.TrapHandler {
         //get device and read in value.
         Device device = deviceInfo.getDevice(); 
         
+        //check ability to read
         if(!alreadyOpen(deviceInfo) || !device.isReadable()){
             syscallError(SYSCALL_READ_ERROR);
             return;
@@ -340,11 +415,30 @@ public class SOS implements CPU.TrapHandler {
         //push value onto calling process' stack
         m_CPU.push(value);
         syscallSuccess();
-    }
+    }//syscallRead
 
     /**
      * Pop data, address, and device id off the calling process's stack and 
      * retrieve the Device Object Associated with the device ID.
+     */
+    /**
+     * syscallRead
+     * 
+     * Pops: 
+     *  - data
+     *  - address
+     *  - device id 
+     * off the calling process' stack.
+     * Looks to see if a device with that device number exists.
+     * If a device with that number does not exists, a syscallError is made.
+     * The Device Object associated with the device ID is retrieved. 
+     * If the device is found the following conditions are then checked:
+     *      - Is the device not already open
+     *      - Is the device not writable
+     * If any of these cases are true, a syscallError is made.
+     * Otherwise, the data that was passed in is written to the device, also 
+     * passing in the address.  
+     *      A syscallSuccess is then made.
      */
     private void syscallWrite() {
         int data = m_CPU.pop();
@@ -370,9 +464,11 @@ public class SOS implements CPU.TrapHandler {
          
         device.write(address, data);
         syscallSuccess();
-    }
+    }//syscallWrite
     
     /**
+     * syscallCoredump
+     * 
      * Calls the CPU regDump function to provide debugging information. In
      * addition, prints to the console the top 3 things on the stack.
      * 
@@ -394,6 +490,10 @@ public class SOS implements CPU.TrapHandler {
     // SYS CALL HELPER METHODS
     
     /**
+     * findDeviceInfo 
+     * 
+     * Checks if the device number passed in is a device number that is in the 
+     * list of devices that we have access to. 
      * 
      * @param deviceNumber
      * @return deviceInfo for device number given
@@ -411,20 +511,44 @@ public class SOS implements CPU.TrapHandler {
         return null;
     }
     
+    /**
+     * syscallSuccess 
+     * 
+     * A helper method that pushes the SYSCALL_SUCCESS value onto the calling
+     * process' stack
+     */
     private void syscallSuccess(){
         m_CPU.push(SYSCALL_SUCCESS);
     }
     
+    /**
+     * syscallError
+     * 
+     * A helper method that pushes the errorCode passed in onto the calling 
+     * process' stack
+     * 
+     * @param errorCode  The value of the error code that is to be reported.
+     */
     private void syscallError(int errorCode){
         m_CPU.push(errorCode);
     }
     
+    /**
+     * alreadyOpen
+     * 
+     * Checks to see if a given device is already open by the current process.
+     * This is done by checking if the deviceInfo process list already contains
+     * the current process in the list. 
+     * 
+     * @param deviceInfo    the deviceInfo that is being checked. 
+     * @return  true if the device is already open, false if it is not. 
+     */
     private boolean alreadyOpen(DeviceInfo deviceInfo){
         if(deviceInfo.containsProcess(m_currProcess)){
             return true;
         }
         return false;
-    }
+    }//alreadyOpen
     
     
 
