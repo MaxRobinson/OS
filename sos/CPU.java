@@ -278,9 +278,6 @@ public class CPU {
             // Get first instruction
             int[] instr = m_RAM.fetch(getPC());
             
-            // Point PC at next instruction
-            if(checkAddress(getPC() + INSTRSIZE)) incrementPC();
-            
             // Print commands to console
             if (m_verbose == true) {
                 regDump();
@@ -338,7 +335,7 @@ public class CPU {
                     
                     // Check valid address
                     if (checkAddress(physicalAddress)) {
-                        setPC(physicalAddress);
+                        setPC(physicalAddress - INSTRSIZE);
                     } else {
                         m_TH.interruptIllegalMemoryAccess(instr[1]);
                     }
@@ -351,7 +348,7 @@ public class CPU {
                  
                         // Check valid address
                         if (checkAddress(physicalAddress)) {
-                            setPC(physicalAddress);
+                            setPC(physicalAddress - INSTRSIZE);
                         } else {
                             m_TH.interruptIllegalMemoryAccess(instr[3]);
                         }
@@ -365,7 +362,7 @@ public class CPU {
     
                         // Check valid address
                         if (checkAddress(physicalAddress)) {
-                            setPC(physicalAddress);
+                            setPC(physicalAddress - INSTRSIZE);
                         } else {
                             m_TH.interruptIllegalMemoryAccess(instr[3]);
                         }
@@ -409,6 +406,7 @@ public class CPU {
                     System.out.println("?? ");
                     break;
             }// switch
+            incrementPC();
         }// while
     }// run
 
