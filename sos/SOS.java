@@ -11,6 +11,7 @@ import java.util.*;
  * @author Max Robinson
  * @author Connor Haas
  * @author Jason Vanderwerf
+ * @author Davis Achong
  * 
  */
 
@@ -239,6 +240,16 @@ public class SOS implements CPU.TrapHandler {
     }//getRandomProcess
     
     /**
+     * scheduleNewProcess
+     * 
+     * Checks to see if there are any more processes that need to be scheduled
+     * If there are, it selects a random process to switch to. 
+     * If the process selected is the same as the current process return to 
+     * continue execution of that process, without a control switch. 
+     * 
+     * If different, Save the current process(If one exists) and then switch
+     * the current process to the new process. Restore the cpu to that 
+     * process' state before returning. 
      * 
      */
     public void scheduleNewProcess()
@@ -249,9 +260,14 @@ public class SOS implements CPU.TrapHandler {
             System.exit(ERROR_NO_PROCESSES);
         }
         
-        //select random process. If no non-blocked processes found, return
+        //Select random process. If no non-blocked processes found, return
         ProcessControlBlock newProcess = getRandomProcess();
         if(newProcess == null){
+            return;
+        }
+        
+        //Check if the process selected has the same Process ID as current Proc.
+        if(newProcess.getProcessId() == m_currProcess.getProcessId()){
             return;
         }
         
@@ -484,7 +500,7 @@ public class SOS implements CPU.TrapHandler {
      * ----------------------------------------------------------------------
      */
 
-    /* PRIVATE HELPER METHODS FOR SYS CALLS ********* */
+    /* ********PRIVATE HELPER METHODS FOR SYS CALLS ********* */
     /**
      * Executes a system exit command
      */
@@ -523,9 +539,12 @@ public class SOS implements CPU.TrapHandler {
      * If the device is found the following conditions are then checked: 
      *      - Is the device in use && not sharable. 
      *      - Is the device already open. 
-     * If any of these cases are true, a syscallError is made.
-     * Otherwise, the current process is added to the deviceInfo
+     * If the device is not sharable the process is added to the deviceInfo 
+     * and then the current process is blocked. After Blocking a new process is
+     * selected to run. 
+     * If the device is already open, error.
      *      A syscallSuccess is then made.
+     *      
      */
     private void syscallOpen() {
         //Get Device ID
@@ -551,6 +570,8 @@ public class SOS implements CPU.TrapHandler {
                     deviceInfo.addProcess(m_currProcess);
                     m_currProcess.block(m_CPU, deviceInfo.getDevice(),
                             SYSCALL_OPEN, 0);
+                    syscallSuccess();
+                    scheduleNewProcess();
                 }
             }
             else{
@@ -572,8 +593,9 @@ public class SOS implements CPU.TrapHandler {
      * If a device with that number does not exists, a syscallError is made. 
      * If the device is found the following conditions are then checked:
      *      - Is the device not already open
-     * If any of these cases are true, a syscallError is made.
-     * Otherwise, the current process is removed from the deviceInfo
+     * If the device is not already open, Error.  
+     * Otherwise, the current process is removed from the deviceInfo, and an
+     * already running process is selected that is blocked, and is unblocked.
      *      A syscallSuccess is then made.
      */
     private void syscallClose() {
@@ -760,7 +782,9 @@ public class SOS implements CPU.TrapHandler {
 
 
     /**
+     * syscallYield
      * 
+     * Schedules a new process to run instead of the currently running process.
      */
     private void syscallYield()
     {
