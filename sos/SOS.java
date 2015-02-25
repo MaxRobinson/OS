@@ -34,6 +34,10 @@ public class SOS implements CPU.TrapHandler {
                                                    * print process state and
                                                    * exit
                                                    */
+    
+    /**This process is used as the idle process' id*/
+    public static final int IDLE_PROC_ID    = 999;  
+    
     // Error codes for system calls
     public static final int SYSCALL_SUCCESS = 0; 
     public static final int SYSCALL_OPEN_ERROR = -3;
@@ -44,6 +48,7 @@ public class SOS implements CPU.TrapHandler {
     // Error Codes
     public static final int ERROR_NOT_ENOUGH_SPACE = -1;
     public static final int ERROR_NO_PROCESSES = -1;
+    
     
 
     // ======================================================================
@@ -177,6 +182,49 @@ public class SOS implements CPU.TrapHandler {
      * Process Management Methods
      * ----------------------------------------------------------------------
      */
+    
+    /**
+     * createIdleProcess
+     *
+     * creates a one instruction process that immediately exits.  This is used
+     * to buy time until device I/O completes and unblocks a legitimate
+     * process.
+     *
+     */
+    public void createIdleProcess()
+    {
+        int progArr[] = { 0, 0, 0, 0,   //SET r0=0
+                          0, 0, 0, 0,   //SET r0=0 (repeated instruction to account for vagaries in student implementation of the CPU class)
+                         10, 0, 0, 0,   //PUSH r0
+                         15, 0, 0, 0 }; //TRAP
+
+        //Initialize the starting position for this program
+        int baseAddr = m_nextLoadPos;
+
+        //Load the program into RAM
+        for(int i = 0; i < progArr.length; i++)
+        {
+            m_RAM.write(baseAddr + i, progArr[i]);
+        }
+
+        //Save the register info from the current process (if there is one)
+        if (m_currProcess != null)
+        {
+            m_currProcess.save(m_CPU);
+        }
+        
+        //Set the appropriate registers
+        m_CPU.setPC(baseAddr);
+        m_CPU.setSP(baseAddr + progArr.length + 10);
+        m_CPU.setBASE(baseAddr);
+        m_CPU.setLIM(baseAddr + progArr.length + 20);
+
+        //Save the relevant info as a new entry in m_processes
+        m_currProcess = new ProcessControlBlock(IDLE_PROC_ID);  
+        m_processes.add(m_currProcess);
+
+    }//createIdleProcess
+    
 
     /**
      * printProcessTable      **DEBUGGING**
@@ -254,15 +302,20 @@ public class SOS implements CPU.TrapHandler {
      */
     public void scheduleNewProcess()
     {
+        // Print Process Table
+        printProcessTable();
+        
         //check if any process available
         if(m_processes.size() == 0){
             debugPrintln("No more processes to run.  Stopping.");
             System.exit(ERROR_NO_PROCESSES);
         }
         
-        //Select random process. If no non-blocked processes found, return
+        //Select random process. If no non-blocked processes found,
+        //schedule an idle process to fill time.
         ProcessControlBlock newProcess = getRandomProcess();
         if(newProcess == null){
+            createIdleProcess();
             return;
         }
         
@@ -432,7 +485,69 @@ public class SOS implements CPU.TrapHandler {
                 + instr[2] + " " + instr[3]);
         System.exit(0);
     }
-
+    
+    /**
+     * 
+     */
+    public void interruptIOReadComplete(int devID, int addr, int data){
+        DeviceInfo deviceInfo = findDeviceInfo(devID);
+        
+        if(deviceInfo!=null){
+            
+            ProcessControlBlock unblockProcess = selectBlockedProcess(
+                    deviceInfo.device, SYSCALL_READ, addr);
+            
+            unblockProcess.unblock();
+            
+            //Perform Context Switch
+            m_currProcess.save(m_CPU);
+            
+            // restore unblocked process and save the data to the stack and
+            // make success call
+            unblockProcess.restore(m_CPU);
+            m_CPU.push(data);
+            syscallSuccess();
+            unblockProcess.save(m_CPU);
+            
+            //restore current running process
+            m_currProcess.restore(m_CPU);
+        }
+        else{
+            syscallError(ERROR_NO_PROCESSES);
+        }
+    }
+    
+    /**
+     * 
+     */
+    public void interruptIOWriteComplete(int devID, int addr){
+        DeviceInfo deviceInfo = findDeviceInfo(devID);
+        
+        if(deviceInfo!=null){
+            
+            ProcessControlBlock unblockProcess = selectBlockedProcess(
+                    deviceInfo.device,SYSCALL_WRITE, addr);
+            
+            unblockProcess.unblock();
+            
+            //Perform Context Switch
+            m_currProcess.save(m_CPU);
+            
+            // restore unblocked process and save the data to the stack and
+            // make success call
+            unblockProcess.restore(m_CPU);
+            syscallSuccess();
+            unblockProcess.save(m_CPU);
+            
+            //restore current running process
+            m_currProcess.restore(m_CPU);
+        }
+        else{
+            syscallError(ERROR_NO_PROCESSES);
+        }
+    }
+    
+    
     /**
      * Prints a given error message that is passed in with the prefix ERROR.
      * 
@@ -669,15 +784,27 @@ public class SOS implements CPU.TrapHandler {
             return;
         }
         
-        int value = device.read(address);
+        //If device is available send read command and block
+        //If not, dec PC and reset stack for re-TRAP call
+        if(device.isAvailable()){
+            device.read(address);
+            m_currProcess.block(m_CPU, device, SYSCALL_READ, address);
+        }
+        else{
+            //Decrement the PC counter to reexecute the TRAP statement
+            m_CPU.setPC(m_CPU.getPC() - CPU.INSTRSIZE);
+            
+            //reset the process stack to the way it was before the TRAP instr.
+            m_CPU.push(deviceNumber);
+            m_CPU.push(address);
+            m_CPU.push(SYSCALL_READ);
+        }
         
-        //push value onto calling process' stack
-        m_CPU.push(value);
-        syscallSuccess();
+        scheduleNewProcess();
     }//syscallRead
 
     /**
-     * syscallRead
+     * syscallWrite
      * 
      * Pops: 
      *  - data
@@ -716,9 +843,23 @@ public class SOS implements CPU.TrapHandler {
             return;
         }
         
-         
-        device.write(address, data);
-        syscallSuccess();
+        if(device.isAvailable()){
+            device.write(address, data);
+            m_currProcess.block(m_CPU, device, SYSCALL_WRITE, address);
+        }
+        else{
+            //Decrement the PC counter to reexecute the TRAP statement
+            m_CPU.setPC(m_CPU.getPC() - CPU.INSTRSIZE);
+            
+            //reset the process stack to the way it was before the TRAP instr.
+            m_CPU.push(deviceNumber);
+            m_CPU.push(address);
+            m_CPU.push(data);
+            m_CPU.push(SYSCALL_WRITE);
+        }
+        
+        scheduleNewProcess();
+        
     }//syscallWrite
     
     /**
@@ -1083,6 +1224,49 @@ public class SOS implements CPU.TrapHandler {
         }//isBlockedForDevice
         
         /**
+         * getRegisterValue
+         *
+         * Retrieves the value of a process' register that is stored in this
+         * object (this.registers).
+         * 
+         * @param idx the index of the register to retrieve.  Use the constants
+         *            in the CPU class
+         * @return one of the register values stored in in this object or -999
+         *         if an invalid index is given 
+         */
+        public int getRegisterValue(int idx)
+        {
+            if ((idx < 0) || (idx >= CPU.NUMREG))
+            {
+                return -999;    // invalid index
+            }
+            
+            return this.registers[idx];
+        }//getRegisterValue
+         
+        /**
+         * setRegisterValue
+         *
+         * Sets the value of a process' register that is stored in this
+         * object (this.registers).  
+         * 
+         * @param idx the index of the register to set.  Use the constants
+         *            in the CPU class.  If an invalid index is given, this
+         *            method does nothing.
+         * @param val the value to set the register to
+         */
+        public void setRegisterValue(int idx, int val)
+        {
+            if ((idx < 0) || (idx >= CPU.NUMREG))
+            {
+                return;    // invalid index
+            }
+            
+            this.registers[idx] = val;
+        }//setRegisterValue
+
+        
+        /**
          * toString       **DEBUGGING**
          *
          * @return a string representation of this class
@@ -1092,7 +1276,32 @@ public class SOS implements CPU.TrapHandler {
             String result = "Process id " + processId + " ";
             if (isBlocked())
             {
-                result = result + "is BLOCKED: ";
+                result = result + "is BLOCKED for ";
+                if (blockedForOperation == SYSCALL_OPEN)
+                {
+                    result = result + "OPEN";
+                }
+                else if (blockedForOperation == SYSCALL_READ)
+                {
+                    result = result + "READ @" + blockedForAddr;
+                }
+                else if (blockedForOperation == SYSCALL_WRITE)
+                {
+                    result = result + "WRITE @" + blockedForAddr;
+                }
+                else  
+                {
+                    result = result + "unknown reason!";
+                }
+                for(DeviceInfo di : m_devices)
+                {
+                    if (di.getDevice() == blockedForDevice)
+                    {
+                        result = result + " on device #" + di.getId();
+                        break;
+                    }
+                }
+                result = result + ": ";
             }
             else if (this == m_currProcess)
             {
