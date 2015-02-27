@@ -368,7 +368,9 @@ public class Sim
         {
             //***********Run the simulation************
             //runSimple();
-            runMultiple1();
+            //runMultiple1();
+            runMultiple2();
+            //runMultiple3();
 
             //Record the ending time
             endTime = System.currentTimeMillis();

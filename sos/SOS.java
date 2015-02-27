@@ -12,6 +12,7 @@ import java.util.*;
  * @author Connor Haas
  * @author Jason Vanderwerf
  * @author Davis Achong
+ * @author Nathan Travanti
  * 
  */
 
@@ -252,11 +253,13 @@ public class SOS implements CPU.TrapHandler {
      */
     public void removeCurrentProcess()
     {
-        //debug
-        debugPrintln("Removing process with id " 
-                + m_currProcess.getProcessId() + " at " + m_CPU.getBASE());
-        
-        m_processes.remove(m_currProcess);
+        if(m_currProcess != null){
+            //debug
+            debugPrintln("Removing process with id " 
+                    + m_currProcess.getProcessId() + " at " + m_CPU.getBASE());
+            
+            m_processes.remove(m_currProcess);
+        }
         scheduleNewProcess();
     }//removeCurrentProcess
 
@@ -399,7 +402,6 @@ public class SOS implements CPU.TrapHandler {
         }
         
         //set the nextLoadPosition as 1 instruction above limit
-        //TODO: Make a helper method? 
         m_nextLoadPos = m_CPU.getLIM() + m_CPU.INSTRSIZE;
         
         //create new process control block and add that to list of processes
@@ -408,9 +410,9 @@ public class SOS implements CPU.TrapHandler {
         m_processes.add(newProcess);
         
         //Debug!
-        debugPrintln("Installed program of size " + allocSize 
-                + " with process id " + m_nextProcessID +" at "
-                + m_CPU.getBASE());
+//        debugPrintln("Installed program of size " + allocSize 
+//                + " with process id " + m_nextProcessID +" at "
+//                + m_CPU.getBASE());
         
         //increment PROCESS ID
         incrementNextProcessID();
