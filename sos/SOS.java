@@ -248,11 +248,11 @@ public class SOS implements CPU.TrapHandler {
     /**
      * removeCurrentProcess
      * 
-     * Remove the current Process from the process list and schedule a new
-     * process to run.
+     * Remove the current Process from the process list.
      */
     public void removeCurrentProcess()
     {
+        printProcessTable();
         if(m_currProcess != null){
             //debug
             debugPrintln("Removing process with id " 
@@ -271,7 +271,7 @@ public class SOS implements CPU.TrapHandler {
      * @return a reference to the ProcessControlBlock struct of the selected process
      * -OR- null if no non-blocked process exists
      */
-    ProcessControlBlock getRandomProcess()
+    public ProcessControlBlock getRandomProcess()
     {
         //Calculate a random offset into the m_processes list
         int offset = ((int)(Math.random() * 2147483647)) % m_processes.size();
@@ -306,7 +306,7 @@ public class SOS implements CPU.TrapHandler {
     public void scheduleNewProcess()
     {
         // Print Process Table
-        printProcessTable();
+        //printProcessTable();
         
         //check if any process available
         if(m_processes.size() == 0){
@@ -316,7 +316,8 @@ public class SOS implements CPU.TrapHandler {
         
         //Select random process. If no non-blocked processes found,
         //schedule an idle process to fill time.
-        ProcessControlBlock newProcess = getRandomProcess();
+        //ProcessControlBlock newProcess = getRandomProcess();
+        ProcessControlBlock newProcess = getNextProcess();
         if(newProcess == null){
             createIdleProcess();
             return;
@@ -341,6 +342,39 @@ public class SOS implements CPU.TrapHandler {
         m_currProcess.restore(m_CPU);
 
     }//scheduleNewProcess
+    
+    /**
+     * getNextProcess
+     * 
+     * Selects a non-blocked process from the process table that is based on the
+     * lowest average starve time. eg, if the starve time of a process is very 
+     * high, select that process to run next. 
+     * Simplish algorithm
+     * 
+     */
+    public ProcessControlBlock getNextProcess(){
+        int numProcesses = m_processes.size();
+        ProcessControlBlock bestNextProcess = null; 
+        ProcessControlBlock nextProcess = null;
+        double bestStarveTime = -1;
+        
+        //set a base line best starve time based on the current process.
+        if(!m_currProcess.isBlocked() && m_processes.contains(m_currProcess)){
+            bestNextProcess = m_currProcess;
+            bestStarveTime = bestNextProcess.avgStarve + 200; 
+        }
+        
+        for(int i=0; i<numProcesses; i++){
+            nextProcess = m_processes.get(i);
+            if(!nextProcess.isBlocked() && nextProcess.avgStarve > bestStarveTime){
+                bestNextProcess = nextProcess;
+                bestStarveTime = nextProcess.avgStarve; 
+            }
+        }
+        
+        return bestNextProcess;
+    }//getNextProcess
+    
 
     /**
      * addProgram
@@ -501,18 +535,10 @@ public class SOS implements CPU.TrapHandler {
             
             unblockProcess.unblock();
             
-            //Perform Context Switch
-            m_currProcess.save(m_CPU);
+            unblockProcess.push(data);
+            unblockProcess.push(SYSCALL_SUCCESS);
             
-            // restore unblocked process and save the data to the stack and
-            // make success call
-            unblockProcess.restore(m_CPU);
-            m_CPU.push(data);
-            syscallSuccess();
-            unblockProcess.save(m_CPU);
             
-            //restore current running process
-            m_currProcess.restore(m_CPU);
         }
         else{
             syscallError(ERROR_NO_PROCESSES);
@@ -549,6 +575,14 @@ public class SOS implements CPU.TrapHandler {
         }
     }
     
+    /**
+     * interruptClock
+     * 
+     * When a clock interrupt goes off, switch the process. 
+     */
+    public void interruptClock(){
+        scheduleNewProcess();
+    }
     
     /**
      * Prints a given error message that is passed in with the prefix ERROR.
@@ -623,6 +657,7 @@ public class SOS implements CPU.TrapHandler {
      */
     private void syscallExit() {
         removeCurrentProcess();
+        
     }
 
     /**
@@ -1092,6 +1127,35 @@ public class SOS implements CPU.TrapHandler {
          * address is stored here.
          */
         private int blockedForAddr = -1;
+        
+        /**
+         * the time it takes to load and save registers, specified as a number
+         * of CPU ticks
+         */
+        private static final int SAVE_LOAD_TIME = 30;
+        
+        /**
+         * Used to store the system time when a process is moved to the Ready
+         * state.
+         */
+        private int lastReadyTime = -1;
+        
+        /**
+         * Used to store the number of times this process has been in the ready
+         * state
+         */
+        private int numReady = 0;
+        
+        /**
+         * Used to store the maximum starve time experienced by this process
+         */
+        private int maxStarve = -1;
+        
+        /**
+         * Used to store the average starve time for this process
+         */
+        private double avgStarve = 0;
+        
         //END INSTANCE VARIABLES
 
         /**
@@ -1121,13 +1185,28 @@ public class SOS implements CPU.TrapHandler {
          */
         public void save(CPU cpu)
         {
+            //A context switch is expensive.  We simluate that here by 
+            //adding ticks to m_CPU
+            m_CPU.addTicks(SAVE_LOAD_TIME);
+            
+            //Save the registers
             int[] regs = cpu.getRegisters();
             this.registers = new int[CPU.NUMREG];
             for(int i = 0; i < CPU.NUMREG; i++)
             {
                 this.registers[i] = regs[i];
             }
+
+            //Assuming this method is being called because the process is moving
+            //out of the Running state, record the current system time for
+            //calculating starve times for this process.  If this method is
+            //being called for a Block, we'll adjust lastReadyTime in the
+            //unblock method.
+            numReady++;
+            lastReadyTime = m_CPU.getTicks();
+            
         }//save
+
         
         /**
          * restore
@@ -1139,13 +1218,28 @@ public class SOS implements CPU.TrapHandler {
          */
         public void restore(CPU cpu)
         {
+            //A context switch is expensive.  We simluate that here by 
+            //adding ticks to m_CPU
+            m_CPU.addTicks(SAVE_LOAD_TIME);
+            
+            //Restore the register values
             int[] regs = cpu.getRegisters();
             for(int i = 0; i < CPU.NUMREG; i++)
             {
                 regs[i] = this.registers[i];
             }
 
+            //Record the starve time statistics
+            int starveTime = m_CPU.getTicks() - lastReadyTime;
+            if (starveTime > maxStarve)
+            {
+                maxStarve = starveTime;
+            }
+            double d_numReady = (double)numReady;
+            avgStarve = avgStarve * (d_numReady - 1.0) / d_numReady;
+            avgStarve = avgStarve + (starveTime * (1.0 / d_numReady));
         }//restore
+
         
         /**
          * block
@@ -1178,11 +1272,18 @@ public class SOS implements CPU.TrapHandler {
          */
         public void unblock()
         {
+            //Reset the info about the block
             blockedForDevice = null;
             blockedForOperation = -1;
             blockedForAddr = -1;
             
+            //Assuming this method is being called because the process is moving
+            //from the Blocked state to the Ready state, record the current
+            //system time for calculating starve times for this process.
+            lastReadyTime = m_CPU.getTicks();
+            
         }//unblock
+
         
         /**
          * isBlocked
@@ -1193,6 +1294,15 @@ public class SOS implements CPU.TrapHandler {
         {
             return (blockedForDevice != null);
         }//isBlocked
+        
+        /**
+         * @return the last time this process was put in the Ready state
+         */
+        public long getLastReadyTime()
+        {
+            return lastReadyTime;
+        }
+
         
         /**
          * isBlockedForDevice
@@ -1275,25 +1385,19 @@ public class SOS implements CPU.TrapHandler {
          */
         public String toString()
         {
+            //Print the Process ID and process state (READY, RUNNING, BLOCKED)
             String result = "Process id " + processId + " ";
             if (isBlocked())
             {
                 result = result + "is BLOCKED for ";
+                //Print device, syscall and address that caused the BLOCKED state
                 if (blockedForOperation == SYSCALL_OPEN)
                 {
                     result = result + "OPEN";
                 }
-                else if (blockedForOperation == SYSCALL_READ)
-                {
-                    result = result + "READ @" + blockedForAddr;
-                }
-                else if (blockedForOperation == SYSCALL_WRITE)
+                else
                 {
                     result = result + "WRITE @" + blockedForAddr;
-                }
-                else  
-                {
-                    result = result + "unknown reason!";
                 }
                 for(DeviceInfo di : m_devices)
                 {
@@ -1314,6 +1418,8 @@ public class SOS implements CPU.TrapHandler {
                 result = result + "is READY: ";
             }
 
+            //Print the register values stored in this object.  These don't
+            //necessarily match what's on the CPU for a Running process.
             if (registers == null)
             {
                 result = result + "<never saved>";
@@ -1329,8 +1435,14 @@ public class SOS implements CPU.TrapHandler {
             result = result + ("BASE=" + registers[CPU.BASE] + " ");
             result = result + ("LIM=" + registers[CPU.LIM] + " ");
 
+            //Print the starve time statistics for this process
+            result = result + "\n\t\t\t";
+            result = result + " Max Starve Time: " + maxStarve;
+            result = result + " Avg Starve Time: " + avgStarve;
+        
             return result;
         }//toString
+
         
         /**
          * compareTo              
@@ -1343,6 +1455,53 @@ public class SOS implements CPU.TrapHandler {
         {
             return this.registers[CPU.BASE] - pi.registers[CPU.BASE];
         }
+        
+        
+        /**
+         * push
+         * 
+         * Push a value to the process control blocks Stack
+         */
+        public void push(int value){
+            //if the process is the current process just push to the stack
+            if(processId == m_currProcess.getProcessId()){
+                m_CPU.push(value);
+            }
+            
+            //if not current process, Push to that process' stack. 
+            int sp = getRegisterValue(CPU.SP) - 1;
+            setRegisterValue(CPU.SP,sp);
+            m_RAM.write(getRegisterValue(CPU.SP), value);          
+        }
+        
+        /**
+         * overallAvgStarve
+         *
+         * @return the overall average starve time for all currently running
+         *         processes
+         *
+         */
+        public double overallAvgStarve()
+        {
+            double result = 0.0;
+            int count = 0;
+            for(ProcessControlBlock pi : m_processes)
+            {
+                if (pi.avgStarve > 0)
+                {
+                    result = result + pi.avgStarve;
+                    count++;
+                }
+            }
+            if (count > 0)
+            {
+                result = result / count;
+            }
+            
+            return result;
+        }//overallAvgStarve
+
+        
 
     }// class ProcessControlBlock
 

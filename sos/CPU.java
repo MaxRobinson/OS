@@ -59,6 +59,9 @@ public class CPU implements Runnable{
                                            // for simplicity.)
     public static final int SPINCREMENT = 1;
     
+    public static final int CLOCK_FREQ = 5; // The number of CPU cycles in 
+                                            // between clock interrupts
+    
 
     // ======================================================================
     // Member variables
@@ -84,6 +87,12 @@ public class CPU implements Runnable{
      * 
      */
     private InterruptController m_IC = null;
+    
+    /**
+     * 
+     */
+    private int m_ticks;
+    
 
     // ======================================================================
     // Methods
@@ -101,6 +110,7 @@ public class CPU implements Runnable{
         }
         m_RAM = ram;
         m_IC = IC;
+        m_ticks = 0;
 
     }// CPU ctor
 
@@ -147,6 +157,22 @@ public class CPU implements Runnable{
      */
     public int[] getRegisters() {
         return m_registers;
+    }
+    
+    /**
+     * getTicks
+     * 
+     * returns the number of ticks
+     */
+    public int getTicks(){
+        return m_ticks;
+    }
+    
+    /**
+     * 
+     */
+    public void addTicks(int add){
+        m_ticks += add;
     }
 
     /**
@@ -415,7 +441,18 @@ public class CPU implements Runnable{
                     System.out.println("?? ");
                     break;
             }// switch
+            
+            //increment ticks counter
+            m_ticks++;
+            //if clock is a multiple of CLOCK_FREQ do a clock interrupt
+            if(checkClock()){
+                m_TH.interruptClock();
+            }
+            
             incrementPC();
+            
+            
+            
         }// while
     }// run
 
@@ -522,6 +559,16 @@ public class CPU implements Runnable{
         }//switch
 
     }//checkForIOInterrupt
+    
+    /**
+     * 
+     */
+    private boolean checkClock(){
+        if(m_ticks%CLOCK_FREQ == 0){
+            return true;
+        }
+        return false;
+    }
 
     
     //======================================================================
@@ -538,6 +585,7 @@ public class CPU implements Runnable{
         void interruptIllegalMemoryAccess(int addr);
         void interruptDivideByZero();
         void interruptIllegalInstruction(int[] instr);
+        void interruptClock();
         void systemCall();
         public void interruptIOReadComplete(int devID, int addr, int data);
         public void interruptIOWriteComplete(int devID, int addr);
