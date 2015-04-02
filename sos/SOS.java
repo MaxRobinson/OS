@@ -159,18 +159,90 @@ public class SOS implements CPU.TrapHandler
      */
 
     //<insert method header here>
-    private int allocBlock(int size)
-    {
-        //%%%You will implement this method
-    
-        return -1;
+    private int allocBlock(int size){
+    	//Keep track of how much free space we find and the best block we've found so far
+        int totalFree = 0;
+        MemBlock bestBlock = null;
+        
+        for(MemBlock block : m_freeList){
+            //Best case: We've found a free block that's just the right size
+            if (block.getSize() == size){
+                m_freeList.remove(block);
+                return block.getAddr();
+            }
+            //Next case: We find a bigger block that has enough space to hold the process
+            // Keep track of it but don't make a decision in case we hit the Best Case later.
+            else if (block.getSize() > size)
+                bestBlock = block;
+            
+            totalFree += block.getSize();
+        }
+        
+        //If we found a bigger block, time to use it.
+        if (bestBlock != null){
+            int address = bestBlock.getAddr();
+            
+            //Make the changes to the block in the free list
+            int index = m_freeList.indexOf(bestBlock);
+            bestBlock.m_addr += size;
+            bestBlock.m_size -= size;
+            m_freeList.set(index, bestBlock);
+            
+            return address;
+        }
+        
+        //Otherwise we've run out of memory
+        if (totalFree < size){
+            return -1;
+        }
+        
+        //Clean up and try again
+        defragMemory();
+        
+        return allocBlock(size);
     }//allocBlock
-
-    //<insert method header here>
-    private void freeCurrProcessMemBlock()
-    {
-        //%%%You will implement this method
     
+    /**
+     * defragMemory()
+     */
+    private void defragMemory()
+    {
+        Collections.sort(m_processes);
+
+        //Move the processes as far down the RAM as possible.
+        int newBase = 0;
+        for(ProcessControlBlock pcb : m_processes)
+        {
+            int size = pcb.getProcessSize();
+            if (pcb.registers[CPU.BASE] != newBase)
+                pcb.move(newBase);
+            newBase += size+1;
+        }
+        
+        //Reset the list of free memory
+        m_freeList.clear();
+        m_freeList.add(new MemBlock(newBase, m_RAM.getSize() - newBase));
+    }//defragMemory
+    
+    
+    //<insert method header here>
+    private void freeCurrProcessMemBlock(){
+    	MemBlock spaceToAdd = new MemBlock(m_currProcess.registers[CPU.BASE], m_currProcess.getProcessSize());
+    	m_freeList.add(spaceToAdd);
+        
+        Collections.sort(m_freeList);
+        //For each block of free memory, merge it with the next one if they meet
+        MemBlock currBlock = null;
+        MemBlock nextBlock = null;
+        for(int i = 0; i < m_freeList.size() - 1; i++){
+            currBlock = m_freeList.get(i);
+            nextBlock = m_freeList.get(i + 1);
+            if(currBlock.m_addr + currBlock.m_size == nextBlock.m_addr){
+                m_freeList.get(i).m_size += nextBlock.m_size;
+                m_freeList.removeElementAt(i + 1);
+                i++;
+            }
+        }
     }//freeCurrProcessMemBlock
     
     /**
@@ -1433,6 +1505,13 @@ public class SOS implements CPU.TrapHandler
         }
         
         /**
+         * @return The size of this process.
+         */
+        public int getProcessSize() { 
+        	return registers[CPU.LIM] - registers[CPU.BASE]; 
+        }
+        
+        /**
          * overallAvgStarve
          *
          * @return the overall average starve time for all currently running
@@ -1463,7 +1542,39 @@ public class SOS implements CPU.TrapHandler
         //<insert method header here>
         public boolean move(int newBase)
         {
-            //%%%You will implement this method
+        	//check if in running? 
+        	if(this == m_currProcess){
+        		save(m_CPU);
+        	}
+        	//Get the relative locations to make for easier moving based on newBase
+            int relLIM = registers[CPU.LIM] - registers[CPU.BASE];
+            int relPC = registers[CPU.PC] - registers[CPU.BASE];
+            int relSP = registers[CPU.SP] - registers[CPU.BASE];
+            
+            
+        	//check if base is valid. 
+        	if(newBase < 0 || newBase + relLIM > m_RAM.getSize()){
+        		return false;
+        	}
+        	
+        	//Copy the program into the new RAM location. 
+            for(int i = 0; i < relLIM; ++i){
+                m_RAM.write(newBase + i, m_RAM.read(registers[CPU.BASE] + i));
+            }
+            
+            //move the adjusted values for the base, LIM, PC, and SP into the CPU
+            int oldBase = registers[CPU.BASE]; //For print Statement
+            registers[CPU.BASE] = newBase;
+            registers[CPU.LIM] = newBase + relLIM;
+            registers[CPU.PC] = newBase + relPC;
+            registers[CPU.SP] = newBase + relSP;
+        	
+            //Restore if need be
+            if(this == m_currProcess){
+                restore(m_CPU);
+            }
+        	
+        	debugPrintln("Process " + this.getProcessId() +" has moved from "+ oldBase +" to " + newBase);
         	return true;
         }//move
         
