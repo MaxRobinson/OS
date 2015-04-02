@@ -88,12 +88,6 @@ public class SOS implements CPU.TrapHandler
     Vector<Program> m_programs = null;
     
     /**
-     * This variable contains the position where the next program will be
-     * loaded (when the createProcess method is called)
-     */
-    int m_nextLoadPos;
-    
-    /**
      * This variable specifies the id that will be 
      * assigned to the next process that is loaded
      */
@@ -105,6 +99,11 @@ public class SOS implements CPU.TrapHandler
      * (Ready, Running or Blocked)
      */
     Vector<ProcessControlBlock> m_processes = null;
+    
+    /**
+     * 
+     */
+    Vector<MemBlock> m_freeList = null;
     
     /*======================================================================
      * Constructors & Debugging
@@ -123,9 +122,12 @@ public class SOS implements CPU.TrapHandler
         m_currProcess = new ProcessControlBlock(42);
         m_devices = new Vector<DeviceInfo>(0);
         m_programs = new Vector<Program>();
-        m_nextLoadPos = 0;
         m_nextProcessID = 1001;
         m_processes = new Vector<ProcessControlBlock>();
+        m_freeList = new Vector<MemBlock>();
+        //initalize starting block of ram 
+        MemBlock start = new MemBlock(0, m_RAM.getSize());
+        m_freeList.add(start);
         
     }//SOS ctor
     
@@ -156,7 +158,101 @@ public class SOS implements CPU.TrapHandler
      *----------------------------------------------------------------------
      */
 
-    //None yet!
+    //<insert method header here>
+    private int allocBlock(int size)
+    {
+        //%%%You will implement this method
+    
+        return -1;
+    }//allocBlock
+
+    //<insert method header here>
+    private void freeCurrProcessMemBlock()
+    {
+        //%%%You will implement this method
+    
+    }//freeCurrProcessMemBlock
+    
+    /**
+     * printMemAlloc                 *DEBUGGING*
+     *
+     * outputs the contents of m_freeList and m_processes to the console and
+     * performs a fragmentation analysis.  It also prints the value in
+     * RAM at the BASE and LIMIT registers.  This is useful for
+     * tracking down errors related to moving process in RAM.
+     *
+     * SIDE EFFECT:  The contents of m_freeList and m_processes are sorted.
+     *
+     */
+    private void printMemAlloc()
+    {
+        //If verbose mode is off, do nothing
+        if (!m_verbose) return;
+
+        //Print a header
+        System.out.println("\n----------========== Memory Allocation Table ==========----------");
+        
+        //Sort the lists by address
+        Collections.sort(m_processes);
+        Collections.sort(m_freeList);
+
+        //Initialize references to the first entry in each list
+        MemBlock m = null;
+        ProcessControlBlock pi = null;
+        ListIterator<MemBlock> iterFree = m_freeList.listIterator();
+        ListIterator<ProcessControlBlock> iterProc = m_processes.listIterator();
+        if (iterFree.hasNext()) m = iterFree.next();
+        if (iterProc.hasNext()) pi = iterProc.next();
+
+        //Loop over both lists in order of their address until we run out of
+        //entries in both lists
+        while ((pi != null) || (m != null))
+        {
+            //Figure out the address of pi and m.  If either is null, then assign
+            //them an address equivalent to +infinity
+            int pAddr = Integer.MAX_VALUE;
+            int mAddr = Integer.MAX_VALUE;
+            if (pi != null)  pAddr = pi.getRegisterValue(CPU.BASE);
+            if (m != null)  mAddr = m.getAddr();
+
+            //If the process has the lowest address then print it and get the
+            //next process
+            if ( mAddr > pAddr )
+            {
+                int size = pi.getRegisterValue(CPU.LIM) - pi.getRegisterValue(CPU.BASE);
+                System.out.print(" Process " + pi.processId +  " (addr=" + pAddr + " size=" + size + " words)");
+                System.out.print(" @BASE=" + m_RAM.read(pi.getRegisterValue(CPU.BASE))
+                                 + " @SP=" + m_RAM.read(pi.getRegisterValue(CPU.SP)));
+                System.out.println();
+                if (iterProc.hasNext())
+                {
+                    pi = iterProc.next();
+                }
+                else
+                {
+                    pi = null;
+                }
+            }//if
+            else
+            {
+                //The free memory block has the lowest address so print it and
+                //get the next free memory block
+                System.out.println("    Open(addr=" + mAddr + " size=" + m.getSize() + ")");
+                if (iterFree.hasNext())
+                {
+                    m = iterFree.next();
+                }
+                else
+                {
+                    m = null;
+                }
+            }//else
+        }//while
+            
+        //Print a footer
+        System.out.println("-----------------------------------------------------------------");
+        
+    }//printMemAlloc
     
     /*======================================================================
      * Device Management Methods
@@ -186,8 +282,13 @@ public class SOS implements CPU.TrapHandler
                          15, 0, 0, 0 }; //TRAP
 
         //Initialize the starting position for this program
-        int baseAddr = m_nextLoadPos;
-
+        int baseAddr = allocBlock(progArr.length);
+        if(baseAddr == -1){
+        	System.out.println("Cannot make room for the Idle Process in Memory -- Exiting Simulation!");
+        	System.exit(1);
+        }
+        
+        
         //Load the program into RAM
         for(int i = 0; i < progArr.length; i++)
         {
@@ -240,6 +341,7 @@ public class SOS implements CPU.TrapHandler
     {
     	//debugPrintln("removed process: " + m_currProcess.getProcessId());
     	printProcessTable();
+    	freeCurrProcessMemBlock();
     	m_processes.remove(m_currProcess);
     	//scheduleNewProcess();
     }//removeCurrentProcess
@@ -386,22 +488,18 @@ public class SOS implements CPU.TrapHandler
      * 
      * Helper method to initialize system registers with appropriate values
      */
-    public void createProcess(Program prog, int allocSize)
+    public boolean createProcess(Program prog, int allocSize)
     {       
         //compile the prog into an array of int
         int[] programArray = prog.export(); 
         
         //set the location for the allocation to be at the next location
-        int location = m_nextLoadPos;
+        int location = allocBlock(allocSize);
         
-        //set the next location for next time
-        m_nextLoadPos += allocSize;
-        
-        
-        if (m_nextLoadPos > m_RAM.getSize())
-        {
-        	debugPrintln("ERROR: Not enough avaliable RAM: " + m_nextLoadPos + " out of " + m_RAM.getSize());
-        	System.exit(-1);
+        //check if unable to allocate memory for program
+        if(location == -1){
+        	System.out.println("Memory is Full");
+        	return false;
         }
         
         for(int i = 0; i < programArray.length; i++){ //move the program into ram
@@ -417,6 +515,11 @@ public class SOS implements CPU.TrapHandler
         m_nextProcessID++;
         
         intializeRegisters(location, allocSize); // initialize registers
+        
+        //save the current process and print the MemAllocation
+        m_currProcess.save(m_CPU);
+        printMemAlloc();
+        return true;
         
     }//createProcess
     
@@ -955,12 +1058,15 @@ public class SOS implements CPU.TrapHandler
        {
            allocSize = prog.getSize() * 2;
        }
-
+       
        //Load the program into RAM
-       createProcess(prog, allocSize);
-
-       //Adjust the PC since it's about to be incremented by the CPU
-       m_CPU.setPC(m_CPU.getPC() - CPU.INSTRSIZE);
+       boolean success = createProcess(prog, allocSize);
+       
+       //If a process was added then adjust the PC pointer
+       if(success){
+	       //Adjust the PC since it's about to be incremented by the CPU
+	       m_CPU.setPC(m_CPU.getPC() - CPU.INSTRSIZE);
+       }
 
    }//syscallExec
 
@@ -1037,7 +1143,7 @@ public class SOS implements CPU.TrapHandler
      *
      * This class contains information about a currently active process.
      */
-    private class ProcessControlBlock
+    private class ProcessControlBlock implements Comparable<ProcessControlBlock>
     {
         /**
          * a unique id for this process
@@ -1352,6 +1458,15 @@ public class SOS implements CPU.TrapHandler
             
             return result;
         }//overallAvgStarve
+        
+        
+        //<insert method header here>
+        public boolean move(int newBase)
+        {
+            //%%%You will implement this method
+        	return true;
+        }//move
+        
          
         /**
          * toString       **DEBUGGING**
@@ -1488,6 +1603,44 @@ public class SOS implements CPU.TrapHandler
             return procs.size() == 0;
         }
         
-    }//class DeviceInfo        
+    }//class DeviceInfo  
+    
+    /**
+     * class MemBlock
+     *
+     * This class contains relevant info about a memory block in RAM.
+     *
+     */
+    private class MemBlock implements Comparable<MemBlock>
+    {
+        /** the address of the block */
+        private int m_addr;
+        /** the size of the block */
+        private int m_size;
+
+        /**
+         * ctor does nothing special
+         */
+        public MemBlock(int addr, int size)
+        {
+            m_addr = addr;
+            m_size = size;
+        }
+
+        /** accessor methods */
+        public int getAddr() { return m_addr; }
+        public int getSize() { return m_size; }
+        
+        /**
+         * compareTo              
+         *
+         * compares this to another MemBlock object based on address
+         */
+        public int compareTo(MemBlock m)
+        {
+            return this.m_addr - m.m_addr;
+        }
+
+    }//class MemBlock
     
 };//class SOS
