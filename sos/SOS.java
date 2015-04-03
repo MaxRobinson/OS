@@ -607,7 +607,7 @@ public class SOS implements CPU.TrapHandler
         m_CPU.setPC(loc);
         m_CPU.setSP(0);
         m_CPU.setBASE(loc);
-        m_CPU.setLIM(loc + size);
+        m_CPU.setLIM(loc + size-1);
     }//initialize registers
     
 
@@ -1546,28 +1546,32 @@ public class SOS implements CPU.TrapHandler
         	if(this == m_currProcess){
         		save(m_CPU);
         	}
+        	
+        	int size = registers[CPU.LIM] - registers[CPU.BASE];
+        	//check if base is valid. 
+        	if(newBase < 0 || newBase + size > m_RAM.getSize()){
+        		return false;
+        	}
+        	
         	//Get the relative locations to make for easier moving based on newBase
-            int relLIM = registers[CPU.LIM] - registers[CPU.BASE];
             int relPC = registers[CPU.PC] - registers[CPU.BASE];
             int relSP = registers[CPU.SP] - registers[CPU.BASE];
             
             
-        	//check if base is valid. 
-        	if(newBase < 0 || newBase + relLIM > m_RAM.getSize()){
-        		return false;
-        	}
+        	
         	
         	//Copy the program into the new RAM location. 
-            for(int i = 0; i < relLIM; ++i){
+            for(int i = 0; i < size; ++i){
                 m_RAM.write(newBase + i, m_RAM.read(registers[CPU.BASE] + i));
             }
             
             //move the adjusted values for the base, LIM, PC, and SP into the CPU
             int oldBase = registers[CPU.BASE]; //For print Statement
-            registers[CPU.BASE] = newBase;
-            registers[CPU.LIM] = newBase + relLIM;
-            registers[CPU.PC] = newBase + relPC;
-            registers[CPU.SP] = newBase + relSP;
+            int relDif = newBase - oldBase;
+            registers[CPU.BASE] += relDif;
+            registers[CPU.LIM] += relDif;
+            registers[CPU.PC] += relDif;
+//            registers[CPU.SP] += relDif;
         	
             //Restore if need be
             if(this == m_currProcess){
