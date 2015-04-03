@@ -18,6 +18,7 @@ import java.util.*;
  * @author Jeremy Cimfl
  * @author Max Robinson
  * @author Taylor Stadeli
+ * @author Teo Agne
  * 
  */
    
@@ -158,7 +159,18 @@ public class SOS implements CPU.TrapHandler
      *----------------------------------------------------------------------
      */
 
-    //<insert method header here>
+    /**
+     * allocBlock(int size)
+     * 
+     * This method looks at the different blocks of free memory and tries to find
+     * a block to put the next process in. It also looks at the total amount of free
+     * memory. If it can't find a block but the amount of free memory is enough to fit
+     * the process, we then call defrag() and then try to allocate space for the process 
+     * again by calling allocBlock. 
+     * 
+     * @param size
+     * @return
+     */
     private int allocBlock(int size){
     	//Keep track of how much free space we find and the best block we've found so far
         int totalFree = 0;
@@ -172,13 +184,14 @@ public class SOS implements CPU.TrapHandler
             }
             //Next case: We find a bigger block that has enough space to hold the process
             // Keep track of it but don't make a decision in case we hit the Best Case later.
-            else if (block.getSize() > size)
+            else if (block.getSize() > size){
                 bestBlock = block;
+            }
             
             totalFree += block.getSize();
         }
         
-        //If we found a bigger block, time to use it.
+        //If we found a bigger block, use it. 
         if (bestBlock != null){
             int address = bestBlock.getAddr();
             
@@ -191,19 +204,24 @@ public class SOS implements CPU.TrapHandler
             return address;
         }
         
-        //Otherwise we've run out of memory
+        //run out of memory. Return -1
         if (totalFree < size){
             return -1;
         }
         
-        //Clean up and try again
+        //Clean up
         defragMemory();
-        
+        //try again
         return allocBlock(size);
     }//allocBlock
     
     /**
-     * defragMemory()
+     * defragMemory
+     * 
+     * This method goes through the list of processes and adjusts their 
+     * position in ram to be all at the bottom and then go up, and then 
+     * clear the free memory list and make a new single block for the list
+     * and put a sigle free block encompassing all of the rest of ram in it.
      */
     private void defragMemory()
     {
@@ -225,7 +243,12 @@ public class SOS implements CPU.TrapHandler
     }//defragMemory
     
     
-    //<insert method header here>
+    /**
+     * freeCurrProcessMemBlock
+     * 
+     * This method frees the current memory block and adds it back back to the free
+     * Memory list as a separate block. 
+     */
     private void freeCurrProcessMemBlock(){
     	MemBlock spaceToAdd = new MemBlock(m_currProcess.registers[CPU.BASE], m_currProcess.getProcessSize());
     	m_freeList.add(spaceToAdd);
@@ -412,7 +435,7 @@ public class SOS implements CPU.TrapHandler
     public void removeCurrentProcess()
     {
     	//debugPrintln("removed process: " + m_currProcess.getProcessId());
-    	printProcessTable();
+//    	printProcessTable();
     	freeCurrProcessMemBlock();
     	m_processes.remove(m_currProcess);
     	//scheduleNewProcess();
@@ -522,8 +545,7 @@ public class SOS implements CPU.TrapHandler
     		return;
     	}
     	
-    	if (newProcess.getProcessId() != sameCheck) 
-    	{
+    	if (newProcess.getProcessId() != sameCheck){
 //    	  debugPrintln("Switched to process " + m_currProcess.getProcessId());
     	    m_currProcess.save(m_CPU);
     	    m_currProcess = newProcess;
@@ -570,7 +592,8 @@ public class SOS implements CPU.TrapHandler
         
         //check if unable to allocate memory for program
         if(location == -1){
-        	System.out.println("Memory is Full");
+//        	m_CPU.setPC(m_CPU.getPC() + CPU.INSTRSIZE);
+//        	System.out.println("Memory is Full");
         	return false;
         }
         
@@ -1539,10 +1562,21 @@ public class SOS implements CPU.TrapHandler
         }//overallAvgStarve
         
         
-        //<insert method header here>
+        /**
+         * Move
+         * 
+         * This method takes a new base and moves the current process
+         * so that where-ever it is in memory right now, it's base becomes
+         * the new base, and all of the code for that process is moved 
+         * accordingly, relative to that new base. 
+         * 
+         * 
+         * @param newBase
+         * @return
+         */
         public boolean move(int newBase)
         {
-        	//check if in running? 
+        	//check if in running
         	if(this == m_currProcess){
         		save(m_CPU);
         	}
@@ -1552,14 +1586,7 @@ public class SOS implements CPU.TrapHandler
         	if(newBase < 0 || newBase + size > m_RAM.getSize()){
         		return false;
         	}
-        	
-        	//Get the relative locations to make for easier moving based on newBase
-            int relPC = registers[CPU.PC] - registers[CPU.BASE];
-            int relSP = registers[CPU.SP] - registers[CPU.BASE];
-            
-            
-        	
-        	
+
         	//Copy the program into the new RAM location. 
             for(int i = 0; i < size; ++i){
                 m_RAM.write(newBase + i, m_RAM.read(registers[CPU.BASE] + i));
@@ -1571,7 +1598,6 @@ public class SOS implements CPU.TrapHandler
             registers[CPU.BASE] += relDif;
             registers[CPU.LIM] += relDif;
             registers[CPU.PC] += relDif;
-//            registers[CPU.SP] += relDif;
         	
             //Restore if need be
             if(this == m_currProcess){
