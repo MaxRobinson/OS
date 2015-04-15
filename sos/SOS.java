@@ -109,6 +109,11 @@ public class SOS implements CPU.TrapHandler
      */
     private MMU m_MMU;
     
+    /**
+     * 
+     */
+    private int m_pageTableSize = 0;
+    
     /*======================================================================
      * Constructors & Debugging
      *----------------------------------------------------------------------
@@ -132,6 +137,7 @@ public class SOS implements CPU.TrapHandler
         m_freeList = new Vector<MemBlock>();
 //        m_freeList.add(new MemBlock(0,m_RAM.getSize()-1));
         m_freeList.add(new MemBlock(0,m_MMU.getSize()-1));
+        initPageTable();
     }//SOS ctor
     
     /**
@@ -162,10 +168,16 @@ public class SOS implements CPU.TrapHandler
      *----------------------------------------------------------------------
      */
 
-    //<Method Header Needed>
+    /**
+     * 
+     */
     private void initPageTable()
     {
-        //%%%You will implement this method
+        m_pageTableSize = m_MMU.getNumPages();
+        for(int i=0 ; i<m_pageTableSize; i++){
+        	m_RAM.write(i, i);
+        }
+        
     }//initPageTable
 
 
@@ -263,9 +275,14 @@ public class SOS implements CPU.TrapHandler
                           0, 0, 0, 0,   //SET r0=0 (repeated instruction to account for vagaries in student implementation of the CPU class)
                          10, 0, 0, 0,   //PUSH r0
                          15, 0, 0, 0 }; //TRAP
-
+        
+        //Create the alloc size of the idle Process, and adjust it to fit the number of memory pages needed;
+        int allocSize = progArr.length;
+        if(allocSize % m_MMU.getPageSize() == 0){
+        	allocSize = ((allocSize/m_MMU.getPageSize() + 1)* m_MMU.getPageSize());
+        }
         //Initialize the starting position for this program
-        int baseAddr = allocBlock(progArr.length);
+        int baseAddr = allocBlock(allocSize);
         if(baseAddr == -1)
         {
         	System.out.println("Failed to load idle Process! Exiting!!!");
@@ -455,6 +472,11 @@ public class SOS implements CPU.TrapHandler
     {       
         //compile the prog into an array of int
         int[] programArray = prog.export(); 
+        
+        if(allocSize % m_MMU.getPageSize() != 0){
+        	allocSize = ((allocSize/m_MMU.getPageSize()) + 1) * m_MMU.getPageSize();
+        }
+        
         int location = allocBlock(allocSize);
         if(location == -1)
         {
