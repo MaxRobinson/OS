@@ -16,9 +16,7 @@ import java.util.*;
  * @author Zak Pearson
  * @author Matt Wellnitz
  * @author Jeremy Cimfl
- * @author Max Robinson
- * @author Taylor Stadeli
- * @author Teo Agne
+ * @author Bryce Matsuda
  * 
  */
    
@@ -88,6 +86,7 @@ public class SOS implements CPU.TrapHandler
      **/
     Vector<Program> m_programs = null;
     
+    
     /**
      * This variable specifies the id that will be 
      * assigned to the next process that is loaded
@@ -101,9 +100,6 @@ public class SOS implements CPU.TrapHandler
      */
     Vector<ProcessControlBlock> m_processes = null;
     
-    /**
-     * 
-     */
     Vector<MemBlock> m_freeList = null;
     
     /*======================================================================
@@ -126,9 +122,7 @@ public class SOS implements CPU.TrapHandler
         m_nextProcessID = 1001;
         m_processes = new Vector<ProcessControlBlock>();
         m_freeList = new Vector<MemBlock>();
-        //initalize starting block of ram 
-        MemBlock start = new MemBlock(0, m_RAM.getSize());
-        m_freeList.add(start);
+        m_freeList.add(new MemBlock(0,m_RAM.getSize()-1));
         
     }//SOS ctor
     
@@ -159,195 +153,7 @@ public class SOS implements CPU.TrapHandler
      *----------------------------------------------------------------------
      */
 
-    /**
-     * allocBlock(int size)
-     * 
-     * This method looks at the different blocks of free memory and tries to find
-     * a block to put the next process in. It also looks at the total amount of free
-     * memory. If it can't find a block but the amount of free memory is enough to fit
-     * the process, we then call defrag() and then try to allocate space for the process 
-     * again by calling allocBlock. 
-     * 
-     * @param size
-     * @return
-     */
-    private int allocBlock(int size){
-    	//Keep track of how much free space we find and the best block we've found so far
-        int totalFree = 0;
-        MemBlock bestBlock = null;
-        
-        for(MemBlock block : m_freeList){
-            //Best case: We've found a free block that's just the right size
-            if (block.getSize() == size){
-                m_freeList.remove(block);
-                return block.getAddr();
-            }
-            //Next case: We find a bigger block that has enough space to hold the process
-            // Keep track of it but don't make a decision in case we hit the Best Case later.
-            else if (block.getSize() > size){
-                bestBlock = block;
-            }
-            
-            totalFree += block.getSize();
-        }
-        
-        //If we found a bigger block, use it. 
-        if (bestBlock != null){
-            int address = bestBlock.getAddr();
-            
-            //Make the changes to the block in the free list
-            int index = m_freeList.indexOf(bestBlock);
-            bestBlock.m_addr += size;
-            bestBlock.m_size -= size;
-            m_freeList.set(index, bestBlock);
-            
-            return address;
-        }
-        
-        //run out of memory. Return -1
-        if (totalFree < size){
-            return -1;
-        }
-        
-        //Clean up
-        defragMemory();
-        //try again
-        return allocBlock(size);
-    }//allocBlock
-    
-    /**
-     * defragMemory
-     * 
-     * This method goes through the list of processes and adjusts their 
-     * position in ram to be all at the bottom and then go up, and then 
-     * clear the free memory list and make a new single block for the list
-     * and put a sigle free block encompassing all of the rest of ram in it.
-     */
-    private void defragMemory()
-    {
-        Collections.sort(m_processes);
-
-        //Move the processes as far down the RAM as possible.
-        int newBase = 0;
-        for(ProcessControlBlock pcb : m_processes)
-        {
-            int size = pcb.getProcessSize();
-            if (pcb.registers[CPU.BASE] != newBase)
-                pcb.move(newBase);
-            newBase += size+1;
-        }
-        
-        //Reset the list of free memory
-        m_freeList.clear();
-        m_freeList.add(new MemBlock(newBase, m_RAM.getSize() - newBase));
-    }//defragMemory
-    
-    
-    /**
-     * freeCurrProcessMemBlock
-     * 
-     * This method frees the current memory block and adds it back back to the free
-     * Memory list as a separate block. 
-     */
-    private void freeCurrProcessMemBlock(){
-    	MemBlock spaceToAdd = new MemBlock(m_currProcess.registers[CPU.BASE], m_currProcess.getProcessSize());
-    	m_freeList.add(spaceToAdd);
-        
-        Collections.sort(m_freeList);
-        //For each block of free memory, merge it with the next one if they meet
-        MemBlock currBlock = null;
-        MemBlock nextBlock = null;
-        for(int i = 0; i < m_freeList.size() - 1; i++){
-            currBlock = m_freeList.get(i);
-            nextBlock = m_freeList.get(i + 1);
-            if(currBlock.m_addr + currBlock.m_size == nextBlock.m_addr){
-                m_freeList.get(i).m_size += nextBlock.m_size;
-                m_freeList.removeElementAt(i + 1);
-                i++;
-            }
-        }
-    }//freeCurrProcessMemBlock
-    
-    /**
-     * printMemAlloc                 *DEBUGGING*
-     *
-     * outputs the contents of m_freeList and m_processes to the console and
-     * performs a fragmentation analysis.  It also prints the value in
-     * RAM at the BASE and LIMIT registers.  This is useful for
-     * tracking down errors related to moving process in RAM.
-     *
-     * SIDE EFFECT:  The contents of m_freeList and m_processes are sorted.
-     *
-     */
-    private void printMemAlloc()
-    {
-        //If verbose mode is off, do nothing
-        if (!m_verbose) return;
-
-        //Print a header
-        System.out.println("\n----------========== Memory Allocation Table ==========----------");
-        
-        //Sort the lists by address
-        Collections.sort(m_processes);
-        Collections.sort(m_freeList);
-
-        //Initialize references to the first entry in each list
-        MemBlock m = null;
-        ProcessControlBlock pi = null;
-        ListIterator<MemBlock> iterFree = m_freeList.listIterator();
-        ListIterator<ProcessControlBlock> iterProc = m_processes.listIterator();
-        if (iterFree.hasNext()) m = iterFree.next();
-        if (iterProc.hasNext()) pi = iterProc.next();
-
-        //Loop over both lists in order of their address until we run out of
-        //entries in both lists
-        while ((pi != null) || (m != null))
-        {
-            //Figure out the address of pi and m.  If either is null, then assign
-            //them an address equivalent to +infinity
-            int pAddr = Integer.MAX_VALUE;
-            int mAddr = Integer.MAX_VALUE;
-            if (pi != null)  pAddr = pi.getRegisterValue(CPU.BASE);
-            if (m != null)  mAddr = m.getAddr();
-
-            //If the process has the lowest address then print it and get the
-            //next process
-            if ( mAddr > pAddr )
-            {
-                int size = pi.getRegisterValue(CPU.LIM) - pi.getRegisterValue(CPU.BASE);
-                System.out.print(" Process " + pi.processId +  " (addr=" + pAddr + " size=" + size + " words)");
-                System.out.print(" @BASE=" + m_RAM.read(pi.getRegisterValue(CPU.BASE))
-                                 + " @SP=" + m_RAM.read(pi.getRegisterValue(CPU.SP)));
-                System.out.println();
-                if (iterProc.hasNext())
-                {
-                    pi = iterProc.next();
-                }
-                else
-                {
-                    pi = null;
-                }
-            }//if
-            else
-            {
-                //The free memory block has the lowest address so print it and
-                //get the next free memory block
-                System.out.println("    Open(addr=" + mAddr + " size=" + m.getSize() + ")");
-                if (iterFree.hasNext())
-                {
-                    m = iterFree.next();
-                }
-                else
-                {
-                    m = null;
-                }
-            }//else
-        }//while
-            
-        //Print a footer
-        System.out.println("-----------------------------------------------------------------");
-        
-    }//printMemAlloc
+    //None yet!
     
     /*======================================================================
      * Device Management Methods
@@ -378,12 +184,11 @@ public class SOS implements CPU.TrapHandler
 
         //Initialize the starting position for this program
         int baseAddr = allocBlock(progArr.length);
-        if(baseAddr == -1){
-        	System.out.println("Cannot make room for the Idle Process in Memory -- Exiting Simulation!");
-        	System.exit(1);
+        if(baseAddr == -1)
+        {
+        	System.out.println("Failed to load idle Process! Exiting!!!");
+        	System.exit(-1);
         }
-        
-        
         //Load the program into RAM
         for(int i = 0; i < progArr.length; i++)
         {
@@ -434,11 +239,9 @@ public class SOS implements CPU.TrapHandler
 	 */
     public void removeCurrentProcess()
     {
-    	//debugPrintln("removed process: " + m_currProcess.getProcessId());
-//    	printProcessTable();
-    	freeCurrProcessMemBlock();
+    	//printProcessTable();
     	m_processes.remove(m_currProcess);
-    	//scheduleNewProcess();
+    	freeCurrProcessMemBlock();
     }//removeCurrentProcess
 
     /**
@@ -469,39 +272,15 @@ public class SOS implements CPU.TrapHandler
     }//getRandomProcess
     
     /**
-     * getNextProcess
-     * 
-     * Selects a non-blocked process from the process table that is based on the
-     * lowest average starve time. eg, if the starve time of a process is very 
-     * low, select that process to run next. 
-     * Simplish algorithm
-     * 
+     * getFairProcess
+     *
+     * selects a non-Blocked process with the smallest average starve time.
+     *
+     * @return a reference to the ProcessControlBlock struct of the selected process
+     * -OR- null if no non-blocked process exists
      */
-    private ProcessControlBlock getNextProcess(){
-        int numProcesses = m_processes.size();
-        int index = -1;
-        ProcessControlBlock nextProcess = null;
-        double bestStarveTime = Integer.MAX_VALUE;
-        
-        for(int i=0; i<numProcesses; i++){
-            nextProcess = m_processes.get(i);
-            if(!nextProcess.isBlocked() && nextProcess.avgStarve < bestStarveTime){
-                //bestNextProcess = nextProcess;
-                bestStarveTime = nextProcess.avgStarve; 
-                index = i;
-            }
-        }
-        
-        if(bestStarveTime == Integer.MAX_VALUE){
-        	return null;
-        }
-        
-        return m_processes.get(index);
-    }//getNextProcess
-    
     ProcessControlBlock getFairProcess()
     {
-    	//TODO
     	int index = -1; 
     	double avgStarve = Integer.MAX_VALUE;    	
     	for(int i = 0; i < m_processes.size(); i++)
@@ -516,40 +295,47 @@ public class SOS implements CPU.TrapHandler
     	{
     		return null;
     	}
-		return m_processes.get(index);
     	
+		return m_processes.get(index);
     }
     
 	/**
 	 * scheduleNewProcess
 	 * 
-	 * Checks to see if there are any more processes that need to be scheduled
-	 * and runs the newly scheduled process. 
-	 * 
+	 * Selects a new process to run and runs it
 	 */
     public void scheduleNewProcess()
     {
-    	//this.printProcessTable();
     	if (m_processes.isEmpty())
     	{
+
     		//debugPrintln("No more processes to run. Stopping.");
     		System.exit(CODE_SUCCESS);
     	}
-
-    	int sameCheck = m_currProcess.getProcessId();
-//    	ProcessControlBlock newProcess = getRandomProcess();
-    	ProcessControlBlock newProcess = getNextProcess();
-//    	ProcessControlBlock newProcess = getFairProcess();
-    	if(newProcess == null){
+    	int i = 1;
+    	ProcessControlBlock temp;
+    	switch (i)
+    	{
+    	case 0: 
+    		temp = getRandomProcess();
+    		break;
+    	case 1: 
+    		temp = getFairProcess();
+    		break;
+		default:
+	    	temp = getRandomProcess();
+	    	break;
+    	}
+    	if(temp == null)
+    	{
     		createIdleProcess();
     		return;
-    	}
-    	
-    	if (newProcess.getProcessId() != sameCheck){
-//    	  debugPrintln("Switched to process " + m_currProcess.getProcessId());
-    	    m_currProcess.save(m_CPU);
-    	    m_currProcess = newProcess;
-    	    m_currProcess.restore(m_CPU);
+    	}	
+    	if(!temp.equals(m_currProcess))
+    	{
+	    	m_currProcess.save(m_CPU);
+	    	m_currProcess = temp;
+	    	m_currProcess.restore(m_CPU);
     	}
     }//scheduleNewProcess
 
@@ -582,20 +368,19 @@ public class SOS implements CPU.TrapHandler
      * 
      * Helper method to initialize system registers with appropriate values
      */
-    public boolean createProcess(Program prog, int allocSize)
+    public void createProcess(Program prog, int allocSize)
     {       
         //compile the prog into an array of int
         int[] programArray = prog.export(); 
-        
-        //set the location for the allocation to be at the next location
         int location = allocBlock(allocSize);
-        
-        //check if unable to allocate memory for program
-        if(location == -1){
-//        	m_CPU.setPC(m_CPU.getPC() + CPU.INSTRSIZE);
-//        	System.out.println("Memory is Full");
-        	return false;
+        if(location == -1)
+        {
+            m_CPU.setPC(m_CPU.getPC() + CPU.INSTRSIZE);
+        	System.out.println("Program installation failed");
+        	return;
         }
+
+
         
         for(int i = 0; i < programArray.length; i++){ //move the program into ram
             m_RAM.write(location + i, programArray[i]);
@@ -604,17 +389,15 @@ public class SOS implements CPU.TrapHandler
         {
         	m_currProcess.save(m_CPU);
         }
+        printMemAlloc();
         
         m_currProcess = new ProcessControlBlock(m_nextProcessID);
         m_processes.add(m_currProcess);
-        m_nextProcessID++;
-        
-        intializeRegisters(location, allocSize); // initialize registers
-        
-        //save the current process and print the MemAllocation
         m_currProcess.save(m_CPU);
-        printMemAlloc();
-        return true;
+        getFree();
+
+        m_nextProcessID++;  
+        intializeRegisters(location, allocSize); // initialize registers
         
     }//createProcess
     
@@ -847,9 +630,8 @@ public class SOS implements CPU.TrapHandler
      */
     private void syscallExit()
     {
-        //m_processes.remove(m_currProcess);
     	removeCurrentProcess();
-        scheduleNewProcess();
+    	scheduleNewProcess();
         
     }//syscallExit
     
@@ -1153,15 +935,12 @@ public class SOS implements CPU.TrapHandler
        {
            allocSize = prog.getSize() * 2;
        }
-       
+
        //Load the program into RAM
-       boolean success = createProcess(prog, allocSize);
-       
-       //If a process was added then adjust the PC pointer
-       if(success){
-	       //Adjust the PC since it's about to be incremented by the CPU
-	       m_CPU.setPC(m_CPU.getPC() - CPU.INSTRSIZE);
-       }
+       createProcess(prog, allocSize);
+
+       //Adjust the PC since it's about to be incremented by the CPU
+       m_CPU.setPC(m_CPU.getPC() - CPU.INSTRSIZE);
 
    }//syscallExec
 
@@ -1232,6 +1011,268 @@ public class SOS implements CPU.TrapHandler
   //======================================================================
     // Inner Classes
     //----------------------------------------------------------------------
+
+    /**
+     * class MemBlock
+     *
+     * This class contains relevant info about a memory block in RAM.
+     *
+     */
+    private class MemBlock implements Comparable<MemBlock>
+    {
+        /** the address of the block */
+        private int m_addr;
+        /** the size of the block */
+        private int m_size;
+
+        /**
+         * ctor does nothing special
+         */
+        public MemBlock(int addr, int size)
+        {
+            m_addr = addr;
+            m_size = size;
+        }
+
+        /** accessor methods */
+        public int getAddr() { return m_addr; }
+        public int getSize() { return m_size; }
+        
+        /**
+         * compareTo              
+         *
+         * compares this to another MemBlock object based on address
+         */
+        public int compareTo(MemBlock m)
+        {
+            return this.m_addr - m.m_addr;
+        }
+
+    }//class MemBlock
+
+    /*======================================================================
+     * Memory Block Management Methods
+     *----------------------------------------------------------------------
+     */
+ 
+
+    /**
+     * allocBlock
+     * @param size
+     * takes a size and finds a place in ram to place something of that 
+     * size.
+     * @return the location of the available space or -1 if not such space exists
+     */
+    private int allocBlock(int size)
+    {    	
+    	int totalSpace = 0;
+    	MemBlock finalLoc = null;
+    	getFree();
+    	for(MemBlock i : m_freeList)
+    	{
+    		totalSpace += i.m_size;
+    		if(i.m_size >= size)
+    		{
+    			finalLoc = i;
+    			break;
+    		}
+    	}
+    	if(finalLoc == null)
+    	{
+    		if (totalSpace < size)
+    		{
+    			return -1;
+    		}
+    		m_currProcess.save(m_CPU);
+    		defragment();
+    		return(allocBlock(size));
+    	}
+        //System.out.println("Allocating space at " + finalLoc.m_addr + " of size " + size);
+    	return finalLoc.m_addr;
+    }//allocBlock
+    
+    /**
+     * getFree
+     * updates the m_freeList to the current state of ram
+     */
+    private void getFree()
+    {
+    	boolean[] used = new boolean[m_RAM.getSize()];
+    	m_currProcess.save(m_CPU);
+    	for (ProcessControlBlock i : m_processes)
+    	{		
+    		for(int j = i.registers[CPU.BASE]; j <= i.registers[CPU.LIM]; j++)
+    		{
+    			used[j] = true;
+    		}
+    	}
+    	int start = 0;
+    	int size = 0;
+    	m_freeList.removeAllElements();
+
+    	for(int i = 0; i < used.length; i++)
+    	{
+    		if(!used[i])
+    		{
+    			start = i;
+    		}
+    		while (!used[i])
+    		{
+    			size++;
+    			i++;
+    			if(i >= used.length)
+    			{
+    				break;
+    			}
+    		}
+    		if(size > 0  )
+        	{
+        		m_freeList.addElement(new MemBlock(start,size));
+        	}
+        	size = 0;
+    	}
+    }
+   /**
+    * defragment
+    * 
+    *  removes fragmentation from ram by squashing all process together
+    */
+    private void defragment()
+    {
+    	int nextLoc = 0;
+    	Vector<ProcessControlBlock> sortedProcesses = sort();
+    	for(ProcessControlBlock i : sortedProcesses)
+    	{
+    		i.move(nextLoc);
+    		nextLoc = i.getRegisterValue(CPU.LIM) + 1;
+    	}
+    	getFree();
+    }
+    
+    /**
+     * sorts the m_processes vector by the base value low to high
+     * 
+     * @returns the new vector
+     */
+    private Vector<ProcessControlBlock> sort()
+    {
+    	Collections.sort(m_processes);
+    	return m_processes;
+//    	Vector<ProcessControlBlock> sorted = new Vector<ProcessControlBlock>();
+//    	for(ProcessControlBlock i : m_processes)
+//    	{
+//    		sorted.add(i);
+//    	}
+//    	for(int i = 0; i < sorted.size(); i++)
+//    	{
+//    		ProcessControlBlock first = sorted.get(i);
+//    		for(int j = i+1; j < sorted.size(); j++)
+//    		{
+//    			if(sorted.get(j).getRegisterValue(CPU.BASE) < first.getRegisterValue(CPU.BASE))
+//    			{
+//    				first = sorted.get(j);
+//    			}
+//    		}
+//    		sorted.set(sorted.indexOf(first),sorted.get(i));
+//    		sorted.set(i, first);
+//    	}
+//		return sorted;
+    	
+    }
+    
+
+    /**
+     * freeCurrProcessMemBlock
+     * 
+     * updates the m_freeList when a process is freed
+     */
+    private void freeCurrProcessMemBlock()
+    {
+    	getFree();    	
+    }//freeCurrProcessMemBlock
+  
+    
+    /**
+     * printMemAlloc                 *DEBUGGING*
+     *
+     * outputs the contents of m_freeList and m_processes to the console and
+     * performs a fragmentation analysis.  It also prints the value in
+     * RAM at the BASE and LIMIT registers.  This is useful for
+     * tracking down errors related to moving process in RAM.
+     *
+     * SIDE EFFECT:  The contents of m_freeList and m_processes are sorted.
+     *
+     */
+    private void printMemAlloc()
+    {
+        //If verbose mode is off, do nothing
+        if (!m_verbose) return;
+
+        //Print a header
+        System.out.println("\n----------========== Memory Allocation Table ==========----------");
+        
+        //Sort the lists by address
+        Collections.sort(m_processes);
+        Collections.sort(m_freeList);
+
+        //Initialize references to the first entry in each list
+        MemBlock m = null;
+        ProcessControlBlock pi = null;
+        ListIterator<MemBlock> iterFree = m_freeList.listIterator();
+        ListIterator<ProcessControlBlock> iterProc = m_processes.listIterator();
+        if (iterFree.hasNext()) m = iterFree.next();
+        if (iterProc.hasNext()) pi = iterProc.next();
+
+        //Loop over both lists in order of their address until we run out of
+        //entries in both lists
+        while ((pi != null) || (m != null))
+        {
+            //Figure out the address of pi and m.  If either is null, then assign
+            //them an address equivalent to +infinity
+            int pAddr = Integer.MAX_VALUE;
+            int mAddr = Integer.MAX_VALUE;
+            if (pi != null)  pAddr = pi.getRegisterValue(CPU.BASE);
+            if (m != null)  mAddr = m.getAddr();
+
+            //If the process has the lowest address then print it and get the
+            //next process
+            if ( mAddr > pAddr )
+            {
+                int size = pi.getRegisterValue(CPU.LIM) - pi.getRegisterValue(CPU.BASE);
+                System.out.print(" Process " + pi.processId +  " (addr=" + pAddr + " size=" + size + " words)");
+                System.out.print(" @BASE=" + m_RAM.read(pi.getRegisterValue(CPU.BASE))
+                                 + " @SP=" + m_RAM.read(pi.getRegisterValue(CPU.SP)));
+                System.out.println();
+                if (iterProc.hasNext())
+                {
+                    pi = iterProc.next();
+                }
+                else
+                {
+                    pi = null;
+                }
+            }//if
+            else
+            {
+                //The free memory block has the lowest address so print it and
+                //get the next free memory block
+                System.out.println("    Open(addr=" + mAddr + " size=" + m.getSize() + ")");
+                if (iterFree.hasNext())
+                {
+                    m = iterFree.next();
+                }
+                else
+                {
+                    m = null;
+                }
+            }//else
+        }//while
+            
+        //Print a footer
+        System.out.println("-----------------------------------------------------------------");
+        
+    }//printMemAlloc
+
 
     /**
      * class ProcessControlBlock
@@ -1498,6 +1539,56 @@ public class SOS implements CPU.TrapHandler
             return this.registers[CPU.BASE] - pi.registers[CPU.BASE];
         }
 
+        
+        /**
+         * 
+         * @param newBase
+         * Takes a location in ram and moves this process to that location
+         * copying line by line and updates the register values for the
+         * new location of the program
+         *
+         * @return boolean success of moving code
+         */
+        public boolean move(int newBase)
+        {
+        	if(this == m_currProcess)
+        	{
+        		save(m_CPU);
+        	}
+            int oBase = registers[CPU.BASE];
+            int oLim = registers[CPU.LIM];
+            int progSize = oLim - oBase;
+        	if(newBase < 0 || newBase + progSize > m_RAM.getSize())
+        	{
+        		return false;
+        	}
+        	if(newBase > oBase)
+        	{
+        		for(int i = progSize; i >= 0; i--)
+        		{
+        			m_RAM.write(newBase+i, m_RAM.read(i+oBase));
+        		}
+        	}
+        	else
+        	{
+        		for(int i = 0; i <= progSize; i++)
+        		{
+        			m_RAM.write(newBase+i, m_RAM.read(i+oBase));
+        		}
+        	}
+        	registers[CPU.BASE] += newBase - oBase;
+            registers[CPU.LIM] += newBase- oBase;
+            registers[CPU.PC] += newBase - oBase;
+
+        	if(this == m_currProcess)
+        	{
+        		restore(m_CPU);
+        	} 
+        	
+        	debugPrintln("Process " + getProcessId() + " moved from " + oBase + " to " + newBase);
+        	return true;
+        }//move
+
 
         /**
          * constructor
@@ -1509,6 +1600,32 @@ public class SOS implements CPU.TrapHandler
         {
             this.processId = pid;
         }
+        
+        /**
+         * copy constructor
+         *
+         * @param pid        a process id for the process.  The caller is
+         *                   responsible for making sure it is unique.
+         */
+        public ProcessControlBlock(ProcessControlBlock temp)
+        {
+            this.processId = temp.processId;
+
+            this.registers = temp.registers;
+
+            this.blockedForDevice = temp.blockedForDevice;
+
+            this.blockedForOperation = temp.blockedForOperation;
+
+            this.lastReadyTime = temp.lastReadyTime;
+
+            this.numReady = temp.numReady;
+            
+            this.maxStarve = temp.maxStarve;
+
+            this.avgStarve = temp.avgStarve;
+        }
+        
 
         /**
          * @return the current process' id
@@ -1525,13 +1642,6 @@ public class SOS implements CPU.TrapHandler
         public long getLastReadyTime()
         {
             return lastReadyTime;
-        }
-        
-        /**
-         * @return The size of this process.
-         */
-        public int getProcessSize() { 
-        	return registers[CPU.LIM] - registers[CPU.BASE]; 
         }
         
         /**
@@ -1560,54 +1670,6 @@ public class SOS implements CPU.TrapHandler
             
             return result;
         }//overallAvgStarve
-        
-        
-        /**
-         * Move
-         * 
-         * This method takes a new base and moves the current process
-         * so that where-ever it is in memory right now, it's base becomes
-         * the new base, and all of the code for that process is moved 
-         * accordingly, relative to that new base. 
-         * 
-         * 
-         * @param newBase
-         * @return
-         */
-        public boolean move(int newBase)
-        {
-        	//check if in running
-        	if(this == m_currProcess){
-        		save(m_CPU);
-        	}
-        	
-        	int size = registers[CPU.LIM] - registers[CPU.BASE];
-        	//check if base is valid. 
-        	if(newBase < 0 || newBase + size > m_RAM.getSize()){
-        		return false;
-        	}
-
-        	//Copy the program into the new RAM location. 
-            for(int i = 0; i < size; ++i){
-                m_RAM.write(newBase + i, m_RAM.read(registers[CPU.BASE] + i));
-            }
-            
-            //move the adjusted values for the base, LIM, PC, and SP into the CPU
-            int oldBase = registers[CPU.BASE]; //For print Statement
-            int relDif = newBase - oldBase;
-            registers[CPU.BASE] += relDif;
-            registers[CPU.LIM] += relDif;
-            registers[CPU.PC] += relDif;
-        	
-            //Restore if need be
-            if(this == m_currProcess){
-                restore(m_CPU);
-            }
-        	
-        	debugPrintln("Process " + this.getProcessId() +" has moved from "+ oldBase +" to " + newBase);
-        	return true;
-        }//move
-        
          
         /**
          * toString       **DEBUGGING**
@@ -1727,9 +1789,7 @@ public class SOS implements CPU.TrapHandler
         /** Register a process as having closed this device */
         public void removeProcess(ProcessControlBlock pi)
         {
-        	//printProcessTable();
             procs.remove(pi);
-            
         }
 
         /** Does the given process currently have this device opened? */
@@ -1744,44 +1804,6 @@ public class SOS implements CPU.TrapHandler
             return procs.size() == 0;
         }
         
-    }//class DeviceInfo  
-    
-    /**
-     * class MemBlock
-     *
-     * This class contains relevant info about a memory block in RAM.
-     *
-     */
-    private class MemBlock implements Comparable<MemBlock>
-    {
-        /** the address of the block */
-        private int m_addr;
-        /** the size of the block */
-        private int m_size;
-
-        /**
-         * ctor does nothing special
-         */
-        public MemBlock(int addr, int size)
-        {
-            m_addr = addr;
-            m_size = size;
-        }
-
-        /** accessor methods */
-        public int getAddr() { return m_addr; }
-        public int getSize() { return m_size; }
-        
-        /**
-         * compareTo              
-         *
-         * compares this to another MemBlock object based on address
-         */
-        public int compareTo(MemBlock m)
-        {
-            return this.m_addr - m.m_addr;
-        }
-
-    }//class MemBlock
+    }//class DeviceInfo        
     
 };//class SOS
