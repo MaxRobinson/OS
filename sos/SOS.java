@@ -136,8 +136,12 @@ public class SOS implements CPU.TrapHandler
         m_processes = new Vector<ProcessControlBlock>();
         m_freeList = new Vector<MemBlock>();
 //        m_freeList.add(new MemBlock(0,m_RAM.getSize()-1));
-        m_freeList.add(new MemBlock(0,m_MMU.getSize()-1));
+        
+        //for the first block, make the base of the block the number of pages 
+        // in the page table, since below that in RAM is the Page Table.
         initPageTable();
+        m_freeList.add(new MemBlock(m_pageTableSize, m_MMU.getSize()- m_pageTableSize));
+        
     }//SOS ctor
     
     /**
@@ -482,6 +486,7 @@ public class SOS implements CPU.TrapHandler
         {
             m_CPU.setPC(m_CPU.getPC() + CPU.INSTRSIZE);
         	System.out.println("Program installation failed");
+        	printPageTable();
         	return;
         }
 
@@ -1207,7 +1212,7 @@ public class SOS implements CPU.TrapHandler
     private void getFree()
     {
 //    	boolean[] used = new boolean[m_RAM.getSize()];
-    	boolean[] used = new boolean[m_MMU.getSize()];
+    	boolean[] used = new boolean[m_MMU.getSize()- m_pageTableSize];
     	m_currProcess.save(m_CPU);
     	for (ProcessControlBlock i : m_processes)
     	{		
@@ -1237,7 +1242,7 @@ public class SOS implements CPU.TrapHandler
     		}
     		if(size > 0  )
         	{
-        		m_freeList.addElement(new MemBlock(start,size));
+        		m_freeList.addElement(new MemBlock(start + m_pageTableSize, size));
         	}
         	size = 0;
     	}
@@ -1669,27 +1674,40 @@ public class SOS implements CPU.TrapHandler
             int oBase = registers[CPU.BASE];
             int oLim = registers[CPU.LIM];
             int progSize = oLim - oBase;
+            
 //        	if(newBase < 0 || newBase + progSize > m_RAM.getSize())
         	if(newBase < 0 || newBase + progSize > m_MMU.getSize())
         	{
         		return false;
         	}
-        	if(newBase > oBase)
-        	{
-        		for(int i = progSize; i >= 0; i--)
-        		{
-//        			m_RAM.write(newBase+i, m_RAM.read(i+oBase));
-        			m_MMU.write(newBase+i, m_MMU.read(i+oBase));
-        		}
-        	}
-        	else
-        	{
-        		for(int i = 0; i <= progSize; i++)
-        		{
-//        			m_RAM.write(newBase+i, m_RAM.read(i+oBase));
-        			m_MMU.write(newBase+i, m_MMU.read(i+oBase));
-        		}
-        	}
+            
+            int currPageIndex = oBase / m_MMU.getPageSize();
+            int newPageIndex = newBase / m_MMU.getPageSize();
+            
+            //swap the new place we are writing in memory with the old place
+            for(int i = 0; i < progSize / m_MMU.getPageSize(); i++){
+            	int temp = m_MMU.read(newPageIndex + i);
+            	
+            	m_RAM.write(newPageIndex + i, m_MMU.read(currPageIndex + i));
+            	m_RAM.write(currPageIndex + i, temp);
+            }
+            
+//        	if(newBase > oBase)
+//        	{
+//        		for(int i = progSize; i >= 0; i--)
+//        		{
+////        			m_RAM.write(newBase+i, m_RAM.read(i+oBase));
+//        			m_MMU.write(newBase+i, m_MMU.read(i+oBase));
+//        		}
+//        	}
+//        	else
+//        	{
+//        		for(int i = 0; i <= progSize; i++)
+//        		{
+////        			m_RAM.write(newBase+i, m_RAM.read(i+oBase));
+//        			m_MMU.write(newBase+i, m_MMU.read(i+oBase));
+//        		}
+//        	}
         	registers[CPU.BASE] += newBase - oBase;
             registers[CPU.LIM] += newBase- oBase;
             registers[CPU.PC] += newBase - oBase;
