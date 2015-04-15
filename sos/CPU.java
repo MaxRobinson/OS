@@ -101,6 +101,13 @@ public class CPU implements Runnable {
      */
     
     private int m_ticks;
+    
+    
+    /**
+     * 
+     */
+    private MMU m_MMU;
+    
 
 	// ======================================================================
 	// Methods
@@ -111,13 +118,14 @@ public class CPU implements Runnable {
 	 * 
 	 * Intializes all member variables.
 	 */
-	public CPU(RAM ram, InterruptController IC) {
+	public CPU(RAM ram, InterruptController IC, MMU mmu) {
 		m_registers = new int[NUMREG];
 		for (int i = 0; i < NUMREG; i++) {
 			m_registers[i] = 0;
 		}
 		m_RAM = ram;
 		m_IC = IC;
+		m_MMU = mmu;
 
 	}// CPU ctor
 
@@ -129,6 +137,7 @@ public class CPU implements Runnable {
 	public void registerTrapHandler(TrapHandler th)
 	{
 		m_TH = th;
+		m_MMU.registerTrapHandler(th);
 	}
 
 	/**
@@ -352,7 +361,8 @@ public class CPU implements Runnable {
 			checkForIOInterrupt();
 
 			// get next instruction from RAM
-			int[] instruction = m_RAM.fetch(getPC());
+//			int[] instruction = m_RAM.fetch(getPC());
+			int[] instruction = m_MMU.fetch(getPC());
 
 			// check if in verbose mode
 			if (m_verbose) {
@@ -436,14 +446,18 @@ public class CPU implements Runnable {
 
 			case LOAD:
 				if (checkAccess((instruction[2] + getBASE()))) {
-					m_registers[instruction[1]] = m_RAM.read(instruction[2]
+//					m_registers[instruction[1]] = m_RAM.read(instruction[2]
+//							+ getBASE());
+					m_registers[instruction[1]] = m_MMU.read(instruction[2]
 							+ getBASE());
 				}
 				break;
 
 			case SAVE:
 				if (checkAccess((instruction[2] + getBASE()))) {
-					m_RAM.write(m_registers[instruction[2]] + getBASE(),
+//					m_RAM.write(m_registers[instruction[2]] + getBASE(),
+//							m_registers[instruction[1]]);
+					m_MMU.write(m_registers[instruction[2]] + getBASE(),
 							m_registers[instruction[1]]);
 				}
 				break;
@@ -513,13 +527,15 @@ public class CPU implements Runnable {
 	 *            stuff onto the stack
 	 */
 	private void pushToStackR(int register) {
-		m_RAM.write(getLIM() - getSP(), m_registers[register]);
+//		m_RAM.write(getLIM() - getSP(), m_registers[register]);
+		m_MMU.write(getLIM() - getSP(), m_registers[register]);
 		setSP((getSP() + 1));
 	}
 
 	public void pushToStack(int content)
 	{
-		m_RAM.write(getLIM() - getSP(), content);
+//		m_RAM.write(getLIM() - getSP(), content);
+		m_MMU.write(getLIM() - getSP(), content);
 		setSP((getSP() + 1));
 	}
 
@@ -538,7 +554,8 @@ public class CPU implements Runnable {
 			return;
 		}
 		setSP((getSP() - 1));
-		m_registers[register] = m_RAM.read(getLIM() - getSP());
+//		m_registers[register] = m_RAM.read(getLIM() - getSP());
+		m_registers[register] = m_MMU.read(getLIM() - getSP());
 
 	}
 
@@ -556,7 +573,8 @@ public class CPU implements Runnable {
 			return 0;
 		}
 		setSP((getSP() - 1));
-		int toReturn = m_RAM.read(getLIM() - getSP());
+//		int toReturn = m_RAM.read(getLIM() - getSP());
+		int toReturn = m_MMU.read(getLIM() - getSP());
 		return toReturn;
 	}
 

@@ -85,6 +85,7 @@ public class SOS implements CPU.TrapHandler
      * to the operating system.
      **/
     Vector<Program> m_programs = null;
+
     
     
     /**
@@ -102,6 +103,12 @@ public class SOS implements CPU.TrapHandler
     
     Vector<MemBlock> m_freeList = null;
     
+    
+    /**
+     * 
+     */
+    private MMU m_MMU;
+    
     /*======================================================================
      * Constructors & Debugging
      *----------------------------------------------------------------------
@@ -110,11 +117,12 @@ public class SOS implements CPU.TrapHandler
     /**
      * The constructor does nothing special
      */
-    public SOS(CPU c, RAM r)
+    public SOS(CPU c, RAM r, MMU m)
     {
         //Init member list
         m_CPU = c;
         m_RAM = r;
+        m_MMU = m;
         m_CPU.registerTrapHandler(this);
         m_currProcess = new ProcessControlBlock(42);
         m_devices = new Vector<DeviceInfo>(0);
@@ -122,8 +130,8 @@ public class SOS implements CPU.TrapHandler
         m_nextProcessID = 1001;
         m_processes = new Vector<ProcessControlBlock>();
         m_freeList = new Vector<MemBlock>();
-        m_freeList.add(new MemBlock(0,m_RAM.getSize()-1));
-        
+//        m_freeList.add(new MemBlock(0,m_RAM.getSize()-1));
+        m_freeList.add(new MemBlock(0,m_MMU.getSize()-1));
     }//SOS ctor
     
     /**
@@ -147,6 +155,80 @@ public class SOS implements CPU.TrapHandler
             System.out.println(s);
         }
     }
+    
+    
+    /*======================================================================
+     * Virtual Memory Methods
+     *----------------------------------------------------------------------
+     */
+
+    //<Method Header Needed>
+    private void initPageTable()
+    {
+        //%%%You will implement this method
+    }//initPageTable
+
+
+    /**
+     * createPageTableEntry
+     *
+     * is a helper method for {@link #printPageTable} to create a single entry
+     * in the page table to print to the console.  This entry is formatted to be
+     * exactly 35 characters wide by appending spaces.
+     *
+     * @param pageNum is the page to print an entry for
+     *
+     */
+    private String createPageTableEntry(int pageNum)
+    {
+        int frameNum = m_RAM.read(pageNum);
+        int baseAddr = frameNum * m_MMU.getPageSize();
+
+        //check to see if student has pre-shifted frame numbers
+        //in their page table and, if so, correct the values
+        if (frameNum / m_MMU.getPageSize() != 0)
+        {
+            baseAddr = frameNum;
+            frameNum /= m_MMU.getPageSize();
+        }
+
+        String entry = "page " + pageNum + "-->frame "
+                          + frameNum + " (@" + baseAddr +")";
+
+        //pad out to 35 characters
+        String format = "%s%" + (35 - entry.length()) + "s";
+        return String.format(format, entry, " ");
+        
+    }//createPageTableEntry
+
+    /**
+     * printPageTable      *DEBUGGING*
+     *
+     * prints the page table in a human readable format
+     *
+     */
+    private void printPageTable()
+    {
+        //If verbose mode is off, do nothing
+        if (!m_verbose) return;
+
+        //Print a header
+        System.out.println("\n----------========== Page Table ==========----------");
+
+        //Print the entries in two columns
+        for(int i = 0; i < m_MMU.getNumPages() / 2; i++)
+        {
+            String line = createPageTableEntry(i);                       //left column
+            line += createPageTableEntry(i + (m_MMU.getNumPages() / 2)); //right column
+            System.out.println(line);
+        }
+        
+        //Print a footer
+        System.out.println("-----------------------------------------------------------------");
+        
+    }//printPageTable
+    
+    
     
     /*======================================================================
      * Memory Block Management Methods
@@ -192,7 +274,8 @@ public class SOS implements CPU.TrapHandler
         //Load the program into RAM
         for(int i = 0; i < progArr.length; i++)
         {
-            m_RAM.write(baseAddr + i, progArr[i]);
+//            m_RAM.write(baseAddr + i, progArr[i]);
+        	m_MMU.write(baseAddr + i, progArr[i]);
         }
 
         //Save the register info from the current process (if there is one)
@@ -383,7 +466,8 @@ public class SOS implements CPU.TrapHandler
 
         
         for(int i = 0; i < programArray.length; i++){ //move the program into ram
-            m_RAM.write(location + i, programArray[i]);
+//            m_RAM.write(location + i, programArray[i]);
+        	m_MMU.write(location + i, programArray[i]);
         }
         if (m_currProcess != null)
         {
@@ -503,8 +587,10 @@ public class SOS implements CPU.TrapHandler
 			ProcessControlBlock block = selectBlockedProcess(temp.device, SYSCALL_READ, addr);
 			block.unblock();
 			int location = block.getRegisterValue(CPU.LIM) - block.getRegisterValue(CPU.SP);
-			m_RAM.write(location, data);
-			m_RAM.write(location-1, CODE_SUCCESS);
+//			m_RAM.write(location, data);
+//			m_RAM.write(location-1, CODE_SUCCESS);
+			m_MMU.write(location, data);
+			m_MMU.write(location-1, CODE_SUCCESS);
 	        block.setRegisterValue(CPU.SP, CPU.SP+2);
 		}
 	}//interruptIOReadComplete
@@ -540,7 +626,8 @@ public class SOS implements CPU.TrapHandler
 			ProcessControlBlock block = selectBlockedProcess(temp.device, SYSCALL_READ, addr);
 			block.unblock();
 			int location = block.getRegisterValue(CPU.LIM) - block.getRegisterValue(CPU.SP);
-			m_RAM.write(location, CODE_SUCCESS);
+//			m_RAM.write(location, CODE_SUCCESS);
+			m_MMU.write(location, CODE_SUCCESS);
 	        block.setRegisterValue(CPU.SP, CPU.SP+1);
 		}		
 	}//interruptIOWriteComplete
@@ -1097,7 +1184,8 @@ public class SOS implements CPU.TrapHandler
      */
     private void getFree()
     {
-    	boolean[] used = new boolean[m_RAM.getSize()];
+//    	boolean[] used = new boolean[m_RAM.getSize()];
+    	boolean[] used = new boolean[m_MMU.getSize()];
     	m_currProcess.save(m_CPU);
     	for (ProcessControlBlock i : m_processes)
     	{		
@@ -1239,9 +1327,10 @@ public class SOS implements CPU.TrapHandler
             if ( mAddr > pAddr )
             {
                 int size = pi.getRegisterValue(CPU.LIM) - pi.getRegisterValue(CPU.BASE);
-                System.out.print(" Process " + pi.processId +  " (addr=" + pAddr + " size=" + size + " words)");
-                System.out.print(" @BASE=" + m_RAM.read(pi.getRegisterValue(CPU.BASE))
-                                 + " @SP=" + m_RAM.read(pi.getRegisterValue(CPU.SP)));
+                System.out.print(" Process " + pi.processId +  " (addr=" + pAddr + " size=" + size + " words");
+                System.out.print(" / " + (size / m_MMU.getPageSize()) + " pages)" );
+                System.out.print(" @BASE=" + m_MMU.read(pi.getRegisterValue(CPU.BASE))
+                                 + " @SP=" + m_MMU.read(pi.getRegisterValue(CPU.SP)));
                 System.out.println();
                 if (iterProc.hasNext())
                 {
@@ -1558,7 +1647,8 @@ public class SOS implements CPU.TrapHandler
             int oBase = registers[CPU.BASE];
             int oLim = registers[CPU.LIM];
             int progSize = oLim - oBase;
-        	if(newBase < 0 || newBase + progSize > m_RAM.getSize())
+//        	if(newBase < 0 || newBase + progSize > m_RAM.getSize())
+        	if(newBase < 0 || newBase + progSize > m_MMU.getSize())
         	{
         		return false;
         	}
@@ -1566,14 +1656,16 @@ public class SOS implements CPU.TrapHandler
         	{
         		for(int i = progSize; i >= 0; i--)
         		{
-        			m_RAM.write(newBase+i, m_RAM.read(i+oBase));
+//        			m_RAM.write(newBase+i, m_RAM.read(i+oBase));
+        			m_MMU.write(newBase+i, m_MMU.read(i+oBase));
         		}
         	}
         	else
         	{
         		for(int i = 0; i <= progSize; i++)
         		{
-        			m_RAM.write(newBase+i, m_RAM.read(i+oBase));
+//        			m_RAM.write(newBase+i, m_RAM.read(i+oBase));
+        			m_MMU.write(newBase+i, m_MMU.read(i+oBase));
         		}
         	}
         	registers[CPU.BASE] += newBase - oBase;
