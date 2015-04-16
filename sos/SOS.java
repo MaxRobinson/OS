@@ -17,6 +17,8 @@ import java.util.*;
  * @author Matt Wellnitz
  * @author Jeremy Cimfl
  * @author Bryce Matsuda
+ * @author Max Robinson
+ * @author Hunter Gracia
  * 
  */
    
@@ -282,7 +284,7 @@ public class SOS implements CPU.TrapHandler
         
         //Create the alloc size of the idle Process, and adjust it to fit the number of memory pages needed;
         int allocSize = progArr.length;
-        if(allocSize % m_MMU.getPageSize() == 0){
+        if(allocSize % m_MMU.getPageSize() != 0){
         	allocSize = ((allocSize/m_MMU.getPageSize() + 1)* m_MMU.getPageSize());
         }
         //Initialize the starting position for this program
@@ -416,7 +418,7 @@ public class SOS implements CPU.TrapHandler
     		//debugPrintln("No more processes to run. Stopping.");
     		System.exit(CODE_SUCCESS);
     	}
-    	int i = 1;
+    	int i = 0;
     	ProcessControlBlock temp;
     	switch (i)
     	{
@@ -1212,7 +1214,12 @@ public class SOS implements CPU.TrapHandler
     private void getFree()
     {
 //    	boolean[] used = new boolean[m_RAM.getSize()];
-    	boolean[] used = new boolean[m_MMU.getSize()- m_pageTableSize];
+    	boolean[] used = new boolean[m_MMU.getSize()];
+//    	System.out.println("m_MMU number of pages: " + m_MMU.getNumPages());
+    	for(int i = 0; i < m_MMU.getNumPages(); i++){
+    		used[i]= true;
+    	}
+    	
     	m_currProcess.save(m_CPU);
     	for (ProcessControlBlock i : m_processes)
     	{		
@@ -1242,7 +1249,7 @@ public class SOS implements CPU.TrapHandler
     		}
     		if(size > 0  )
         	{
-        		m_freeList.addElement(new MemBlock(start + m_pageTableSize, size));
+        		m_freeList.addElement(new MemBlock(start, size));
         	}
         	size = 0;
     	}
@@ -1254,7 +1261,9 @@ public class SOS implements CPU.TrapHandler
     */
     private void defragment()
     {
-    	int nextLoc = 0;
+//    	int nextLoc = 0; /// Move this to be after page table
+    	System.out.println(m_pageTableSize);
+    	int nextLoc = m_pageTableSize;
     	Vector<ProcessControlBlock> sortedProcesses = sort();
     	for(ProcessControlBlock i : sortedProcesses)
     	{
@@ -1685,7 +1694,11 @@ public class SOS implements CPU.TrapHandler
             int newPageIndex = newBase / m_MMU.getPageSize();
             
             //swap the new place we are writing in memory with the old place
-            for(int i = 0; i < progSize / m_MMU.getPageSize(); i++){
+            
+            int blockNumbers = progSize / m_MMU.getPageSize();
+            if(progSize % m_MMU.getPageSize() != 0){ blockNumbers += 1;}
+            
+            for(int i = 0; i < blockNumbers; i++){
             	int temp = m_MMU.read(newPageIndex + i);
             	
             	m_RAM.write(newPageIndex + i, m_MMU.read(currPageIndex + i));

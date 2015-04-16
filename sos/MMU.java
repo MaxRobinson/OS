@@ -16,6 +16,8 @@ import java.util.*;
  * @see CPU
  * @see SOS
  * @see RAM
+ * @author Max Robinson
+ * @author Hunter Garcia
  *
  */
 public class MMU
@@ -307,6 +309,7 @@ public class MMU
     {
         //get page number
     	int pageNumber = virtAddr & m_pageMask;
+    	pageNumber = pageNumber >>> m_offsetSize;
     	//get offset in that page number
     	int offsetAmount = virtAddr & m_offsetMask;
     	
