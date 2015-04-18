@@ -106,7 +106,8 @@ public class CPU implements Runnable {
     
     
     /**
-     * 
+     * This is an instance of the Memory management unit
+     * used to access ram
      */
     private MMU m_MMU;
     
@@ -363,7 +364,6 @@ public class CPU implements Runnable {
 			checkForIOInterrupt();
 
 			// get next instruction from RAM
-//			int[] instruction = m_RAM.fetch(getPC());
 			int[] instruction = m_MMU.fetch(getPC());
 
 			// check if in verbose mode
@@ -448,8 +448,6 @@ public class CPU implements Runnable {
 
 			case LOAD:
 				if (checkAccess((instruction[2] + getBASE()))) {
-//					m_registers[instruction[1]] = m_RAM.read(instruction[2]
-//							+ getBASE());
 					m_registers[instruction[1]] = m_MMU.read(instruction[2]
 							+ getBASE());
 				}
@@ -457,8 +455,6 @@ public class CPU implements Runnable {
 
 			case SAVE:
 				if (checkAccess((instruction[2] + getBASE()))) {
-//					m_RAM.write(m_registers[instruction[2]] + getBASE(),
-//							m_registers[instruction[1]]);
 					m_MMU.write(m_registers[instruction[2]] + getBASE(),
 							m_registers[instruction[1]]);
 				}
@@ -529,14 +525,12 @@ public class CPU implements Runnable {
 	 *            stuff onto the stack
 	 */
 	private void pushToStackR(int register) {
-//		m_RAM.write(getLIM() - getSP(), m_registers[register]);
 		m_MMU.write(getLIM() - getSP(), m_registers[register]);
 		setSP((getSP() + 1));
 	}
 
 	public void pushToStack(int content)
 	{
-//		m_RAM.write(getLIM() - getSP(), content);
 		m_MMU.write(getLIM() - getSP(), content);
 		setSP((getSP() + 1));
 	}
@@ -556,7 +550,6 @@ public class CPU implements Runnable {
 			return;
 		}
 		setSP((getSP() - 1));
-//		m_registers[register] = m_RAM.read(getLIM() - getSP());
 		m_registers[register] = m_MMU.read(getLIM() - getSP());
 
 	}
@@ -575,7 +568,6 @@ public class CPU implements Runnable {
 			return 0;
 		}
 		setSP((getSP() - 1));
-//		int toReturn = m_RAM.read(getLIM() - getSP());
 		int toReturn = m_MMU.read(getLIM() - getSP());
 		return toReturn;
 	}

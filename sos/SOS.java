@@ -107,7 +107,8 @@ public class SOS implements CPU.TrapHandler
     
     
     /**
-     * 
+     * This is an instance of the Memory management unit
+     * used by the OS. 
      */
     private MMU m_MMU;
     
@@ -137,7 +138,6 @@ public class SOS implements CPU.TrapHandler
         m_nextProcessID = 1001;
         m_processes = new Vector<ProcessControlBlock>();
         m_freeList = new Vector<MemBlock>();
-//        m_freeList.add(new MemBlock(0,m_RAM.getSize()-1));
         
         //for the first block, make the base of the block the number of pages 
         // in the page table, since below that in RAM is the Page Table.
@@ -175,7 +175,10 @@ public class SOS implements CPU.TrapHandler
      */
 
     /**
+     * initPageTable
      * 
+     * Initializes the bottom of RAM to contain the page table used by the 
+     * MMU to access physical ram. 
      */
     private void initPageTable()
     {
@@ -273,6 +276,7 @@ public class SOS implements CPU.TrapHandler
      * creates a one instruction process that immediately exits.  This is used
      * to buy time until device I/O completes and unblocks a legitimate
      * process.
+     * Enforces that the idle process allocs the size of a single page in memory
      *
      */
     public void createIdleProcess()
@@ -297,7 +301,6 @@ public class SOS implements CPU.TrapHandler
         //Load the program into RAM
         for(int i = 0; i < progArr.length; i++)
         {
-//            m_RAM.write(baseAddr + i, progArr[i]);
         	m_MMU.write(baseAddr + i, progArr[i]);
         }
 
@@ -473,6 +476,7 @@ public class SOS implements CPU.TrapHandler
      * @param size total allocated ram for the program
      * 
      * Helper method to initialize system registers with appropriate values
+     * - Enforces that the allocSize is a multiple of the page size in memory.
      */
     public void createProcess(Program prog, int allocSize)
     {       
@@ -493,9 +497,8 @@ public class SOS implements CPU.TrapHandler
         }
 
 
-        
-        for(int i = 0; i < programArray.length; i++){ //move the program into ram
-//            m_RAM.write(location + i, programArray[i]);
+        for(int i = 0; i < programArray.length; i++){ 
+        	//move the program into ram
         	m_MMU.write(location + i, programArray[i]);
         }
         if (m_currProcess != null)
@@ -616,8 +619,6 @@ public class SOS implements CPU.TrapHandler
 			ProcessControlBlock block = selectBlockedProcess(temp.device, SYSCALL_READ, addr);
 			block.unblock();
 			int location = block.getRegisterValue(CPU.LIM) - block.getRegisterValue(CPU.SP);
-//			m_RAM.write(location, data);
-//			m_RAM.write(location-1, CODE_SUCCESS);
 			m_MMU.write(location, data);
 			m_MMU.write(location-1, CODE_SUCCESS);
 	        block.setRegisterValue(CPU.SP, CPU.SP+2);
@@ -655,7 +656,6 @@ public class SOS implements CPU.TrapHandler
 			ProcessControlBlock block = selectBlockedProcess(temp.device, SYSCALL_READ, addr);
 			block.unblock();
 			int location = block.getRegisterValue(CPU.LIM) - block.getRegisterValue(CPU.SP);
-//			m_RAM.write(location, CODE_SUCCESS);
 			m_MMU.write(location, CODE_SUCCESS);
 	        block.setRegisterValue(CPU.SP, CPU.SP+1);
 		}		
@@ -1176,7 +1176,7 @@ public class SOS implements CPU.TrapHandler
      * allocBlock
      * @param size
      * takes a size and finds a place in ram to place something of that 
-     * size.
+     * size. - The size should be a multiple of the page size of memory. 
      * @return the location of the available space or -1 if not such space exists
      */
     private int allocBlock(int size)
@@ -1213,9 +1213,7 @@ public class SOS implements CPU.TrapHandler
      */
     private void getFree()
     {
-//    	boolean[] used = new boolean[m_RAM.getSize()];
     	boolean[] used = new boolean[m_MMU.getSize()];
-//    	System.out.println("m_MMU number of pages: " + m_MMU.getNumPages());
     	for(int i = 0; i < m_MMU.getNumPages(); i++){
     		used[i]= true;
     	}
@@ -1261,8 +1259,6 @@ public class SOS implements CPU.TrapHandler
     */
     private void defragment()
     {
-//    	int nextLoc = 0; /// Move this to be after page table
-    	System.out.println(m_pageTableSize);
     	int nextLoc = m_pageTableSize;
     	Vector<ProcessControlBlock> sortedProcesses = sort();
     	for(ProcessControlBlock i : sortedProcesses)
@@ -1684,7 +1680,6 @@ public class SOS implements CPU.TrapHandler
             int oLim = registers[CPU.LIM];
             int progSize = oLim - oBase;
             
-//        	if(newBase < 0 || newBase + progSize > m_RAM.getSize())
         	if(newBase < 0 || newBase + progSize > m_MMU.getSize())
         	{
         		return false;
@@ -1694,7 +1689,6 @@ public class SOS implements CPU.TrapHandler
             int newPageIndex = newBase / m_MMU.getPageSize();
             
             //swap the new place we are writing in memory with the old place
-            
             int blockNumbers = progSize / m_MMU.getPageSize();
             if(progSize % m_MMU.getPageSize() != 0){ blockNumbers += 1;}
             
@@ -1705,22 +1699,6 @@ public class SOS implements CPU.TrapHandler
             	m_RAM.write(currPageIndex + i, temp);
             }
             
-//        	if(newBase > oBase)
-//        	{
-//        		for(int i = progSize; i >= 0; i--)
-//        		{
-////        			m_RAM.write(newBase+i, m_RAM.read(i+oBase));
-//        			m_MMU.write(newBase+i, m_MMU.read(i+oBase));
-//        		}
-//        	}
-//        	else
-//        	{
-//        		for(int i = 0; i <= progSize; i++)
-//        		{
-////        			m_RAM.write(newBase+i, m_RAM.read(i+oBase));
-//        			m_MMU.write(newBase+i, m_MMU.read(i+oBase));
-//        		}
-//        	}
         	registers[CPU.BASE] += newBase - oBase;
             registers[CPU.LIM] += newBase- oBase;
             registers[CPU.PC] += newBase - oBase;

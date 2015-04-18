@@ -301,9 +301,13 @@ public class MMU
     /**
      * translate
      * 
+     * Translates a virtual address from a program into a 
+     * Physical address in RAM. First it transforms it into
+     * a page address and gets the frame in ram and then 
+     * re-adds / appends the offset into that frame. 
      * 
      * @param virtAddr
-     * @return
+     * @return physAddr - The physical address in memory
      */
     private int translate(int virtAddr)
     {
